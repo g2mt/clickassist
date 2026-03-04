@@ -8,6 +8,7 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QKeySequence
 
 from clickassist.platform.hotkey import AbstractHotkeyListener
+from clickassist.platform.backend import AbstractBackend
 
 
 class WindowsHotkeyListener(threading.Thread, AbstractHotkeyListener):
@@ -70,7 +71,7 @@ class WindowsHotkeyListener(threading.Thread, AbstractHotkeyListener):
         super().start()
 
 
-class WindowsBackend:
+class WindowsBackend(AbstractBackend):
     """Windows-specific backend implementation using Win32 API."""
 
     def click(self, x: int, y: int):

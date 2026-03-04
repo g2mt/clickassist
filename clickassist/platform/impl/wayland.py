@@ -1,10 +1,12 @@
 import subprocess
+import re
 from typing import Optional
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
 
 from clickassist.platform.hotkey import AbstractHotkeyListener
+from clickassist.platform.backend import AbstractBackend
 
 try:
     import keyboard as kb_lib
@@ -42,7 +44,7 @@ class WaylandHotkeyListener(AbstractHotkeyListener):
         pass
 
 
-class WaylandBackend:
+class WaylandBackend(AbstractBackend):
     """Linux/Wayland-specific backend implementation using ydotool."""
 
     def click(self, x: int, y: int):
@@ -55,13 +57,14 @@ class WaylandBackend:
         # Use ydotool to get position; fall back to Qt
         try:
             out = subprocess.check_output(["ydotool", "getmouselocation"])
-            parts = out.decode().split()
-            x = int(parts[0].split(":")[1])
-            y = int(parts[1].split(":")[1])
-            return QPoint(x, y)
-        except Exception:
-            from PySide6.QtWidgets import QApplication
-            return QApplication.primaryScreen().geometry().center()
+            match = re.search(r"x:(\d+) y:(\d+)", out.decode())
+            if match:
+                x, y = int(match.group(1)), int(match.group(2))
+                return QPoint(x, y)
+            else:
+                raise RuntimeError("Failed to parse mouselocation output")
+        except Exception as e:
+            raise RuntimeError("Failed to call getmouselocation") from e
 
     def create_hotkey_listener(self):
         return WaylandHotkeyListener()

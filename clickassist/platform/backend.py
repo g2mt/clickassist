@@ -3,9 +3,7 @@ from abc import ABC, abstractmethod
 
 from PySide6.QtCore import QPoint
 
-from clickassist.platform.impl import OSBackend
-
-class Backend(ABC):
+class AbstractBackend(ABC):
     """Abstract base class for platform-specific backend operations."""
 
     @abstractmethod
