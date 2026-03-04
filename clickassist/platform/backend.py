@@ -7,8 +7,13 @@ class AbstractBackend(ABC):
     """Abstract base class for platform-specific backend operations."""
 
     @abstractmethod
-    def click(self, x: int, y: int):
-        """Perform a mouse click at the given coordinates."""
+    def mouse_down(self, x: int, y: int):
+        """Perform a mouse down at the given coordinates."""
+        pass
+
+    @abstractmethod
+    def mouse_up(self, x: int, y: int):
+        """Perform a mouse up at the given coordinates."""
         pass
 
     @abstractmethod
