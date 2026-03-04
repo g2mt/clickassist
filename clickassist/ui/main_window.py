@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtCore import Qt, QPoint, QSize
 
-from clickassist.platform.backend import Backend
+from clickassist.platform.backend import AbstractBackend
 from clickassist.platform.hotkey import AbstractHotkeyListener
 from clickassist.ui.keybind_dialog import KeybindDialog
 from clickassist.ui.position_window import PositionWindow
@@ -17,7 +17,7 @@ from clickassist.ui.position_window import PositionWindow
 class MainWindow(QMainWindow):
     """Main application window with toolbar."""
 
-    def __init__(self, backend: Backend):
+    def __init__(self, backend: AbstractBackend):
         super().__init__()
         self.setWindowTitle("Click Assistant")
         self.resize(400, 120)
