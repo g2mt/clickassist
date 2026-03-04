@@ -1,5 +1,3 @@
-"""Linux/Wayland-specific implementations."""
-
 import subprocess
 from typing import Optional
 

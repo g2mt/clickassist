@@ -1,5 +1,3 @@
-"""Main application window with toolbar."""
-
 import sys
 from typing import Optional
 

@@ -1,5 +1,3 @@
-"""Windows-specific implementations."""
-
 import ctypes
 import threading
 from typing import Optional

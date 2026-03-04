@@ -1,5 +1,3 @@
-"""Platform-specific hotkey listener implementations."""
-
 import sys
 from abc import ABC, abstractmethod
 from typing import Optional

@@ -1,5 +1,3 @@
-"""Dialog for capturing keybindings."""
-
 from typing import Optional
 
 from PySide6.QtWidgets import (

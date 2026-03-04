@@ -1,5 +1,3 @@
-"""Platform-specific backend implementations."""
-
 import sys
 from abc import ABC, abstractmethod
 

@@ -1,5 +1,3 @@
-"""Frameless window that shows a red circle at a bound mouse position."""
-
 from typing import Optional
 
 from PySide6.QtWidgets import QWidget
