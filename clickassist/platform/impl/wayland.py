@@ -6,6 +6,7 @@ import libevdev
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
+from PySide6.QtWidgets import QApplication
 
 from clickassist.platform.hotkey import AbstractHotkeyListener
 from clickassist.platform.backend import AbstractBackend
@@ -46,15 +47,20 @@ class WaylandHotkeyListener(AbstractHotkeyListener):
         pass
 
 
-# Touchscreen resolution bounds for the virtual device
-_TOUCH_MAX_X = 32767
-_TOUCH_MAX_Y = 32767
-
-
 class WaylandBackend(AbstractBackend):
     """Linux-specific backend implementation using uinput."""
 
     def __init__(self):
+        # Get screen resolution using Qt
+        # Ensure a QApplication instance exists
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        screen = app.primaryScreen()
+        size = screen.size()
+        touch_max_x = size.width()
+        touch_max_y = size.height()
+
         dev = libevdev.Device()
         dev.name = "ClickAssist Virtual Touchscreen"
 
@@ -62,19 +68,19 @@ class WaylandBackend(AbstractBackend):
 
         dev.enable(
             libevdev.EV_ABS.ABS_X,
-            libevdev.InputAbsInfo(minimum=0, maximum=_TOUCH_MAX_X),
+            libevdev.InputAbsInfo(minimum=0, maximum=touch_max_x),
         )
         dev.enable(
             libevdev.EV_ABS.ABS_Y,
-            libevdev.InputAbsInfo(minimum=0, maximum=_TOUCH_MAX_Y),
+            libevdev.InputAbsInfo(minimum=0, maximum=touch_max_y),
         )
         dev.enable(
             libevdev.EV_ABS.ABS_MT_POSITION_X,
-            libevdev.InputAbsInfo(minimum=0, maximum=_TOUCH_MAX_X),
+            libevdev.InputAbsInfo(minimum=0, maximum=touch_max_x),
         )
         dev.enable(
             libevdev.EV_ABS.ABS_MT_POSITION_Y,
-            libevdev.InputAbsInfo(minimum=0, maximum=_TOUCH_MAX_Y),
+            libevdev.InputAbsInfo(minimum=0, maximum=touch_max_y),
         )
         dev.enable(
             libevdev.EV_ABS.ABS_MT_SLOT,
@@ -85,7 +91,7 @@ class WaylandBackend(AbstractBackend):
             libevdev.InputAbsInfo(minimum=0, maximum=65535),
         )
 
-        dev.enable(libevdev.EV_PROP.INPUT_PROP_DIRECT)
+        dev.enable(libevdev.INPUT_PROP_DIRECT)
 
         self._uinput = dev.create_uinput_device()
         self._tracking_id = 0
