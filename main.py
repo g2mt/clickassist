@@ -33,12 +33,12 @@ class AbstractHotkeyListener(ABC):
         pass
 
     @abstractmethod
-    def unregister_all(self) -> None:
+    def unregister_all(self):
         """Unregister all hotkeys."""
         pass
 
     @abstractmethod
-    def start(self) -> None:
+    def start(self):
         """Start listening for hotkeys."""
         pass
 
@@ -47,7 +47,7 @@ class Backend(ABC):
     """Abstract base class for platform-specific backend operations."""
 
     @abstractmethod
-    def click(self, x: int, y: int) -> None:
+    def click(self, x: int, y: int):
         """Perform a mouse click at the given coordinates."""
         pass
 
@@ -69,7 +69,7 @@ if PLATFORM_WINDOWS:
     class WindowsHotkeyListener(threading.Thread, AbstractHotkeyListener):
         """Registers Win32 global hotkeys and fires callbacks."""
 
-        def __init__(self) -> None:
+        def __init__(self):
             super().__init__(daemon=True)
             self._bindings: dict[int, tuple[QKeySequence, callable]] = {}
             self._id_counter: int = 1
@@ -81,7 +81,7 @@ if PLATFORM_WINDOWS:
             self._bindings[hk_id] = (key_sequence, callback)
             return hk_id
 
-        def unregister_all(self) -> None:
+        def unregister_all(self):
             if self._hwnd:
                 for hk_id in list(self._bindings.keys()):
                     ctypes.windll.user32.UnregisterHotKey(self._hwnd, hk_id)
@@ -104,7 +104,7 @@ if PLATFORM_WINDOWS:
             vk_code = ctypes.windll.user32.VkKeyScanW(vk) & 0xFF
             return win_mod, vk_code
 
-        def run(self) -> None:
+        def run(self):
             import ctypes.wintypes as wt
             # Create a message-only window handle via a dummy approach
             for hk_id, (qs, _cb) in self._bindings.items():
@@ -121,14 +121,14 @@ if PLATFORM_WINDOWS:
                 ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
                 ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
 
-        def start(self) -> None:
+        def start(self):
             """Start the listener thread."""
             super().start()
 
     class WindowsBackend(Backend):
         """Windows-specific backend implementation using Win32 API."""
 
-        def click(self, x: int, y: int) -> None:
+        def click(self, x: int, y: int):
             win32api.SetCursorPos((x, y))
             win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
             win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x, y, 0, 0)
@@ -152,7 +152,7 @@ else:
     class WaylandHotkeyListener(AbstractHotkeyListener):
         """Linux/Wayland hotkey listener using the keyboard library."""
 
-        def __init__(self) -> None:
+        def __init__(self):
             self._hooks: list = []
 
         def register(self, key_sequence: QKeySequence, callback: callable) -> int:
@@ -163,7 +163,7 @@ else:
             self._hooks.append(hook)
             return len(self._hooks) - 1
 
-        def unregister_all(self) -> None:
+        def unregister_all(self):
             if not _KB_AVAILABLE:
                 return
             for hook in self._hooks:
@@ -173,14 +173,14 @@ else:
                     pass
             self._hooks.clear()
 
-        def start(self) -> None:
+        def start(self):
             """Keyboard library works without a thread."""
             pass
 
     class WaylandBackend(Backend):
         """Linux/Wayland-specific backend implementation using ydotool."""
 
-        def click(self, x: int, y: int) -> None:
+        def click(self, x: int, y: int):
             subprocess.Popen(
                 ["ydotool", "mousemove", "--absolute", "-x", str(x), "-y", str(y)]
             ).wait()
@@ -206,7 +206,7 @@ else:
 class KeybindDialog(QDialog):
     """Dialog that waits for the user to press a key and records it."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Press a key")
         self.setModal(True)
@@ -221,7 +221,7 @@ class KeybindDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(cancel_btn)
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event):  # type: ignore[override]
         key = event.key()
         if key in (Qt.Key.Key_unknown, Qt.Key.Key_Control, Qt.Key.Key_Shift,
                    Qt.Key.Key_Alt, Qt.Key.Key_Meta):
@@ -244,7 +244,7 @@ class PositionWindow(QWidget):
         position: QPoint,
         key_sequence: QKeySequence,
         parent: Optional[QWidget] = None,
-    ) -> None:
+    ):
         super().__init__(parent)
         self.position: QPoint = position          # screen position of the click
         self.key_sequence: QKeySequence = key_sequence
@@ -264,7 +264,7 @@ class PositionWindow(QWidget):
 
     ### painting ###
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event):  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(220, 30, 30, 200))
@@ -273,18 +273,18 @@ class PositionWindow(QWidget):
 
     ### drag support (used in Move mode) ###
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
         event.accept()
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event):  # type: ignore[override]
         if self._dragging and (event.buttons() & Qt.MouseButton.LeftButton):
             self.move(event.globalPosition().toPoint() - self._drag_offset)
         event.accept()
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             centre = self.frameGeometry().topLeft() + QPoint(self.RADIUS, self.RADIUS)
@@ -297,7 +297,7 @@ class PositionWindow(QWidget):
 class MainWindow(QMainWindow):
     """Main application window with toolbar."""
 
-    def __init__(self, backend: Backend) -> None:
+    def __init__(self, backend: Backend):
         super().__init__()
         self.setWindowTitle("Click Assistant")
         self.resize(400, 120)
@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
 
     ### UI construction ###
 
-    def _build_toolbar(self) -> None:
+    def _build_toolbar(self):
         toolbar: QToolBar = QToolBar("Main Toolbar", self)
         toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(toolbar)
@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
         self._act_delete.triggered.connect(self._on_delete)
         toolbar.addAction(self._act_delete)
 
-    def _build_tray(self) -> None:
+    def _build_tray(self):
         self._tray = QSystemTrayIcon(
             QIcon.fromTheme("input-mouse"), self
         )
@@ -377,7 +377,7 @@ class MainWindow(QMainWindow):
 
     ### Toolbar handlers ###
 
-    def _on_start(self) -> None:
+    def _on_start(self):
         """Minimise to tray and activate keybinds."""
         self._activate_keybinds()
         self._tray.show()
@@ -386,7 +386,7 @@ class MainWindow(QMainWindow):
         for pw in self._bindings.values():
             pw.hide()
 
-    def _on_record(self, checked: bool) -> None:
+    def _on_record(self, checked: bool):
         self._recording = checked
         if checked:
             self._set_exclusive_mode("record")
@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
         else:
             self._show_all_position_windows()
 
-    def _on_move(self, checked: bool) -> None:
+    def _on_move(self, checked: bool):
         self._move_mode = checked
         if checked:
             self._set_exclusive_mode("move")
@@ -423,7 +423,7 @@ class MainWindow(QMainWindow):
             self._act_move.setChecked(False)
             self._move_mode = False
 
-    def _on_delete(self, checked: bool) -> None:
+    def _on_delete(self, checked: bool):
         self._delete_mode = checked
         if checked:
             self._set_exclusive_mode("delete")
@@ -434,7 +434,7 @@ class MainWindow(QMainWindow):
 
     ### Mode helpers ###
 
-    def _set_exclusive_mode(self, active: str) -> None:
+    def _set_exclusive_mode(self, active: str):
         """Uncheck all mode buttons except the active one."""
         if active != "record":
             self._act_record.setChecked(False)
@@ -446,11 +446,11 @@ class MainWindow(QMainWindow):
             self._act_delete.setChecked(False)
             self._delete_mode = False
 
-    def _show_all_position_windows(self) -> None:
+    def _show_all_position_windows(self):
         for pw in self._bindings.values():
             pw.show()
 
-    def _set_position_windows_movable(self, movable: bool) -> None:
+    def _set_position_windows_movable(self, movable: bool):
         """Enable or disable mouse tracking / dragging on position windows."""
         for pw in self._bindings.values():
             pw.setMouseTracking(movable)
@@ -461,7 +461,7 @@ class MainWindow(QMainWindow):
 
     def _make_pw_press_handler(self, pw: PositionWindow, original_handler):
         """Wrap a PositionWindow's mousePressEvent to support delete mode."""
-        def handler(event) -> None:
+        def handler(event):
             if self._delete_mode:
                 ks_str = pw.key_sequence.toString()
                 reply = QMessageBox.question(
@@ -480,7 +480,7 @@ class MainWindow(QMainWindow):
 
     ### Keybind activation / deactivation ###
 
-    def _activate_keybinds(self) -> None:
+    def _activate_keybinds(self):
         self._hotkey_listener = self._backend.create_hotkey_listener()
         for ks_str, pw in self._bindings.items():
             ks = QKeySequence(ks_str)
@@ -496,18 +496,18 @@ class MainWindow(QMainWindow):
         self._hotkey_listener.start()
         self._active = True
 
-    def _deactivate_keybinds(self) -> None:
+    def _deactivate_keybinds(self):
         if self._hotkey_listener:
             self._hotkey_listener.unregister_all()
         self._active = False
 
     ### Tray helpers ###
 
-    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._restore_from_tray()
 
-    def _restore_from_tray(self) -> None:
+    def _restore_from_tray(self):
         self._deactivate_keybinds()
         self._tray.hide()
         self.show()
@@ -517,7 +517,7 @@ class MainWindow(QMainWindow):
 
     ### Close event ###
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event):  # type: ignore[override]
         self._deactivate_keybinds()
         for pw in self._bindings.values():
             pw.close()
@@ -526,16 +526,16 @@ class MainWindow(QMainWindow):
 
 ### Entry point ###
 
-def main() -> None:
+def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    
+
     # Create the appropriate backend for the platform
     if PLATFORM_WINDOWS:
         backend: Backend = WindowsBackend()
     else:
         backend = WaylandBackend()
-    
+
     window = MainWindow(backend)
     window.show()
     sys.exit(app.exec())
