@@ -155,7 +155,9 @@ class WaylandKeyListener(AbstractKeyListener):
                     try:
                         self._queue.put_nowait((key_code, pressed))
                     except queue.Full:
-                        pass  # Drop event if queue is full
+                        # drop older events
+                        self._queue.get(False)
+                        self._queue.put_nowait((key_code, pressed))
 
                 _libinput.libinput_event_destroy(event)
 
