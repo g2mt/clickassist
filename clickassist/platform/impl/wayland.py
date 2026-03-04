@@ -1,5 +1,10 @@
 import subprocess
 import re
+import ctypes
+import ctypes.util
+import threading
+import queue
+import select
 from typing import Optional
 
 import libevdev
@@ -8,44 +13,158 @@ from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
-from clickassist.platform.hotkey import AbstractHotkeyListener
 from clickassist.platform.backend import AbstractBackend
-
-try:
-    import keyboard as kb_lib
-    _KB_AVAILABLE = True
-except ImportError:
-    _KB_AVAILABLE = False
+from clickassist.platform.key import AbstractKeyListener
 
 
-class WaylandHotkeyListener(AbstractHotkeyListener):
-    """Linux/Wayland hotkey listener using the keyboard library."""
+# Load libudev and libinput from C library
+_libudev = ctypes.CDLL(ctypes.util.find_library("udev"), use_errno=True)
+_libinput = ctypes.CDLL(ctypes.util.find_library("input"), use_errno=True)
+
+# libudev function signatures
+_libudev.udev_new.restype = ctypes.c_void_p
+_libudev.udev_new.argtypes = []
+_libudev.udev_unref.restype = ctypes.c_void_p
+_libudev.udev_unref.argtypes = [ctypes.c_void_p]
+
+# libinput function signatures
+_libinput.libinput_udev_create_context.restype = ctypes.c_void_p
+_libinput.libinput_udev_create_context.argtypes = [
+    ctypes.c_void_p,  # interface
+    ctypes.c_void_p,  # user_data
+    ctypes.c_void_p,  # udev
+]
+_libinput.libinput_udev_assign_seat.restype = ctypes.c_int
+_libinput.libinput_udev_assign_seat.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_libinput.libinput_unref.restype = ctypes.c_void_p
+_libinput.libinput_unref.argtypes = [ctypes.c_void_p]
+_libinput.libinput_get_fd.restype = ctypes.c_int
+_libinput.libinput_get_fd.argtypes = [ctypes.c_void_p]
+_libinput.libinput_dispatch.restype = ctypes.c_int
+_libinput.libinput_dispatch.argtypes = [ctypes.c_void_p]
+_libinput.libinput_get_event.restype = ctypes.c_void_p
+_libinput.libinput_get_event.argtypes = [ctypes.c_void_p]
+_libinput.libinput_event_get_type.restype = ctypes.c_int
+_libinput.libinput_event_get_type.argtypes = [ctypes.c_void_p]
+_libinput.libinput_event_destroy.restype = None
+_libinput.libinput_event_destroy.argtypes = [ctypes.c_void_p]
+_libinput.libinput_event_get_keyboard_event.restype = ctypes.c_void_p
+_libinput.libinput_event_get_keyboard_event.argtypes = [ctypes.c_void_p]
+_libinput.libinput_event_keyboard_get_key.restype = ctypes.c_uint32
+_libinput.libinput_event_keyboard_get_key.argtypes = [ctypes.c_void_p]
+_libinput.libinput_event_keyboard_get_key_state.restype = ctypes.c_int
+_libinput.libinput_event_keyboard_get_key_state.argtypes = [ctypes.c_void_p]
+
+# libinput event type for keyboard
+LIBINPUT_EVENT_KEYBOARD_KEY = 300
+
+# libinput key state
+LIBINPUT_KEY_STATE_RELEASED = 0
+LIBINPUT_KEY_STATE_PRESSED = 1
+
+# Minimal libinput interface (open_restricted / close_restricted callbacks)
+_OPEN_RESTRICTED_FUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
+_CLOSE_RESTRICTED_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_void_p)
+
+def _open_restricted(path, flags, user_data):
+    import os
+    fd = os.open(path.decode(), flags)
+    return fd
+
+def _close_restricted(fd, user_data):
+    import os
+    os.close(fd)
+
+class _LibinputInterface(ctypes.Structure):
+    _fields_ = [
+        ("open_restricted", _OPEN_RESTRICTED_FUNC),
+        ("close_restricted", _CLOSE_RESTRICTED_FUNC),
+    ]
+
+_interface_instance = _LibinputInterface(
+    open_restricted=_OPEN_RESTRICTED_FUNC(_open_restricted),
+    close_restricted=_CLOSE_RESTRICTED_FUNC(_close_restricted),
+)
+
+
+class WaylandKeyListener(AbstractKeyListener):
+    """
+    Listens to keyboard events from libinput on seat0.
+    """
 
     def __init__(self):
-        self._hooks: list = []
+        self._queue = queue.Queue(maxsize=16)
+        self._stop_event = threading.Event()
 
-    def register(self, key_sequence: QKeySequence, callback: callable) -> int:
-        if not _KB_AVAILABLE:
-            return -1
-        hotkey_str = key_sequence.toString().lower().replace("+", "+")
-        hook = kb_lib.add_hotkey(hotkey_str, callback)
-        self._hooks.append(hook)
-        return len(self._hooks) - 1
+        # Set up udev
+        self._udev = _libudev.udev_new()
+        if not self._udev:
+            raise RuntimeError("Failed to create udev context")
 
-    def unregister_all(self):
-        if not _KB_AVAILABLE:
-            return
-        for hook in self._hooks:
+        # Set up libinput context
+        self._li = _libinput.libinput_udev_create_context(
+            ctypes.byref(_interface_instance),
+            None,
+            self._udev,
+        )
+        if not self._li:
+            _libudev.udev_unref(self._udev)
+            raise RuntimeError("Failed to create libinput context")
+
+        # Assign seat
+        ret = _libinput.libinput_udev_assign_seat(self._li, b"seat0")
+        if ret != 0:
+            _libinput.libinput_unref(self._li)
+            _libudev.udev_unref(self._udev)
+            raise RuntimeError("Failed to assign seat 'seat0' to libinput context")
+
+        self._fd = _libinput.libinput_get_fd(self._li)
+
+        # Spawn background thread to poll and enqueue events
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+
+    def __del__(self):
+        self._stop_event.set()
+        self._thread.join()
+        _libinput.libinput_unref(self._li)
+        _libudev.udev_unref(self._udev)
+
+
+    def _poll_loop(self):
+        """Background thread: poll libinput fd and enqueue key events."""
+        while not self._stop_event.is_set():
+            r, _, _ = select.select([self._fd], [], [], 0.1)
+            if not r:
+                continue
+
+            _libinput.libinput_dispatch(self._li)
+
+            while True:
+                event = _libinput.libinput_get_event(self._li)
+                if not event:
+                    break
+
+                event_type = _libinput.libinput_event_get_type(event)
+
+                if event_type == LIBINPUT_EVENT_KEYBOARD_KEY:
+                    kb_event = _libinput.libinput_event_get_keyboard_event(event)
+                    key_code = _libinput.libinput_event_keyboard_get_key(kb_event)
+                    key_state = _libinput.libinput_event_keyboard_get_key_state(kb_event)
+                    pressed = (key_state == LIBINPUT_KEY_STATE_PRESSED)
+                    try:
+                        self._queue.put_nowait((key_code, pressed))
+                    except queue.Full:
+                        pass  # Drop event if queue is full
+
+                _libinput.libinput_event_destroy(event)
+
+    def next_key(self):
+        while True:
             try:
-                kb_lib.remove_hotkey(hook)
-            except Exception:
-                pass
-        self._hooks.clear()
-
-    def start(self):
-        """Keyboard library works without a thread."""
-        pass
-
+                yield self._queue.get()
+            except queue.Empty:
+                continue
 
 class WaylandBackend(AbstractBackend):
     """Linux-specific backend implementation using uinput."""
@@ -132,5 +251,5 @@ class WaylandBackend(AbstractBackend):
     def get_cursor_pos(self) -> QPoint:
         raise NotImplementedError("todo")
 
-    def create_hotkey_listener(self):
-        return WaylandHotkeyListener()
+    def create_key_listener(self) -> AbstractKeyListener:
+        return WaylandKeyListener()

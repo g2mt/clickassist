@@ -1,7 +1,7 @@
 import sys
 from abc import ABC, abstractmethod
 
-from clickassist.platform.hotkey import AbstractHotkeyListener
+from clickassist.platform.key import AbstractKeyListener
 
 from PySide6.QtCore import QPoint
 
@@ -24,6 +24,6 @@ class AbstractBackend(ABC):
         pass
 
     @abstractmethod
-    def create_hotkey_listener(self) -> AbstractHotkeyListener:
+    def create_key_listener(self) -> AbstractKeyListener:
         """Create and return a hotkey listener for this platform."""
         pass

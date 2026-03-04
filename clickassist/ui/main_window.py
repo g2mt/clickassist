@@ -9,7 +9,6 @@ from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtCore import Qt, QPoint, QSize
 
 from clickassist.platform.backend import AbstractBackend
-from clickassist.platform.hotkey import AbstractHotkeyListener
 from clickassist.ui.keybind_dialog import KeybindDialog
 from clickassist.ui.position_window import PositionWindow
 
@@ -33,7 +32,7 @@ class MainWindow(QMainWindow):
         # Bindings: key_sequence string -> PositionWindow
         self._bindings: dict[str, PositionWindow] = {}
 
-        self._hotkey_listener: Optional[AbstractHotkeyListener] = None
+        self._key_listener: Optional[AbstractKeyListener] = None
 
         self._build_toolbar()
         self._build_tray()
@@ -99,7 +98,6 @@ class MainWindow(QMainWindow):
 
     def _on_start(self):
         """Minimise to tray and activate keybinds."""
-        self._activate_keybinds()
         self._tray.show()
         self.hide()
         # Hide all position windows while active
@@ -198,29 +196,6 @@ class MainWindow(QMainWindow):
             original_handler(event)
         return handler
 
-    ### Keybind activation / deactivation ###
-
-    def _activate_keybinds(self):
-        self._hotkey_listener = self._backend.create_hotkey_listener()
-        for ks_str, pw in self._bindings.items():
-            ks = QKeySequence(ks_str)
-            pos = pw.position
-
-            def make_cb(x: int, y: int):
-                def cb():
-                    self._backend.click(x, y)
-                return cb
-
-            self._hotkey_listener.register(ks, make_cb(pos.x(), pos.y()))
-
-        self._hotkey_listener.start()
-        self._active = True
-
-    def _deactivate_keybinds(self):
-        if self._hotkey_listener:
-            self._hotkey_listener.unregister_all()
-        self._active = False
-
     ### Tray helpers ###
 
     def _on_tray_activated(self, reason):
@@ -228,17 +203,8 @@ class MainWindow(QMainWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
-        self._deactivate_keybinds()
         self._tray.hide()
         self.show()
         self.raise_()
         self.activateWindow()
         self._show_all_position_windows()
-
-    ### Close event ###
-
-    def closeEvent(self, event):
-        self._deactivate_keybinds()
-        for pw in self._bindings.values():
-            pw.close()
-        event.accept()
