@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import subprocess
+from abc import ABC, abstractmethod
 from typing import Optional
 
 from PySide6.QtWidgets import (
@@ -19,6 +20,186 @@ if PLATFORM_WINDOWS:
     import win32con
     import ctypes
     from ctypes import wintypes
+    import threading
+
+### Abstract base classes ###
+
+class AbstractHotkeyListener(ABC):
+    """Abstract base class for global hotkey listeners."""
+
+    @abstractmethod
+    def register(self, key_sequence: QKeySequence, callback: callable) -> int:
+        """Register a hotkey and return its ID."""
+        pass
+
+    @abstractmethod
+    def unregister_all(self) -> None:
+        """Unregister all hotkeys."""
+        pass
+
+    @abstractmethod
+    def start(self) -> None:
+        """Start listening for hotkeys."""
+        pass
+
+
+class Backend(ABC):
+    """Abstract base class for platform-specific backend operations."""
+
+    @abstractmethod
+    def click(self, x: int, y: int) -> None:
+        """Perform a mouse click at the given coordinates."""
+        pass
+
+    @abstractmethod
+    def get_cursor_pos(self) -> QPoint:
+        """Get the current cursor position."""
+        pass
+
+    @abstractmethod
+    def create_hotkey_listener(self) -> AbstractHotkeyListener:
+        """Create and return a hotkey listener for this platform."""
+        pass
+
+
+### Windows implementation ###
+
+if PLATFORM_WINDOWS:
+
+    class WindowsHotkeyListener(threading.Thread, AbstractHotkeyListener):
+        """Registers Win32 global hotkeys and fires callbacks."""
+
+        def __init__(self) -> None:
+            super().__init__(daemon=True)
+            self._bindings: dict[int, tuple[QKeySequence, callable]] = {}
+            self._id_counter: int = 1
+            self._hwnd: Optional[int] = None
+
+        def register(self, key_sequence: QKeySequence, callback: callable) -> int:
+            hk_id = self._id_counter
+            self._id_counter += 1
+            self._bindings[hk_id] = (key_sequence, callback)
+            return hk_id
+
+        def unregister_all(self) -> None:
+            if self._hwnd:
+                for hk_id in list(self._bindings.keys()):
+                    ctypes.windll.user32.UnregisterHotKey(self._hwnd, hk_id)
+            self._bindings.clear()
+
+        def _qs_to_win32(self, qs: QKeySequence):
+            key = qs[0].key()
+            mods = qs[0].keyboardModifiers()
+            win_mod = 0
+            if mods & Qt.KeyboardModifier.AltModifier:
+                win_mod |= win32con.MOD_ALT
+            if mods & Qt.KeyboardModifier.ControlModifier:
+                win_mod |= win32con.MOD_CONTROL
+            if mods & Qt.KeyboardModifier.ShiftModifier:
+                win_mod |= win32con.MOD_SHIFT
+            if mods & Qt.KeyboardModifier.MetaModifier:
+                win_mod |= win32con.MOD_WIN
+            vk = int(key)
+            # Map Qt key to VK
+            vk_code = ctypes.windll.user32.VkKeyScanW(vk) & 0xFF
+            return win_mod, vk_code
+
+        def run(self) -> None:
+            import ctypes.wintypes as wt
+            # Create a message-only window handle via a dummy approach
+            for hk_id, (qs, _cb) in self._bindings.items():
+                mod, vk = self._qs_to_win32(qs)
+                ctypes.windll.user32.RegisterHotKey(None, hk_id, mod, vk)
+
+            msg = wt.MSG()
+            while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                if msg.message == win32con.WM_HOTKEY:
+                    hk_id = msg.wParam
+                    if hk_id in self._bindings:
+                        _qs, cb = self._bindings[hk_id]
+                        cb()
+                ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
+                ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+
+        def start(self) -> None:
+            """Start the listener thread."""
+            super().start()
+
+    class WindowsBackend(Backend):
+        """Windows-specific backend implementation using Win32 API."""
+
+        def click(self, x: int, y: int) -> None:
+            win32api.SetCursorPos((x, y))
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+
+        def get_cursor_pos(self) -> QPoint:
+            pos = win32api.GetCursorPos()
+            return QPoint(pos[0], pos[1])
+
+        def create_hotkey_listener(self) -> AbstractHotkeyListener:
+            return WindowsHotkeyListener()
+
+else:
+    ### Linux/Wayland implementation ###
+
+    try:
+        import keyboard as kb_lib
+        _KB_AVAILABLE = True
+    except ImportError:
+        _KB_AVAILABLE = False
+
+    class WaylandHotkeyListener(AbstractHotkeyListener):
+        """Linux/Wayland hotkey listener using the keyboard library."""
+
+        def __init__(self) -> None:
+            self._hooks: list = []
+
+        def register(self, key_sequence: QKeySequence, callback: callable) -> int:
+            if not _KB_AVAILABLE:
+                return -1
+            hotkey_str = key_sequence.toString().lower().replace("+", "+")
+            hook = kb_lib.add_hotkey(hotkey_str, callback)
+            self._hooks.append(hook)
+            return len(self._hooks) - 1
+
+        def unregister_all(self) -> None:
+            if not _KB_AVAILABLE:
+                return
+            for hook in self._hooks:
+                try:
+                    kb_lib.remove_hotkey(hook)
+                except Exception:
+                    pass
+            self._hooks.clear()
+
+        def start(self) -> None:
+            """Keyboard library works without a thread."""
+            pass
+
+    class WaylandBackend(Backend):
+        """Linux/Wayland-specific backend implementation using ydotool."""
+
+        def click(self, x: int, y: int) -> None:
+            subprocess.Popen(
+                ["ydotool", "mousemove", "--absolute", "-x", str(x), "-y", str(y)]
+            ).wait()
+            subprocess.Popen(["ydotool", "click", "0xC0"]).wait()
+
+        def get_cursor_pos(self) -> QPoint:
+            # Use ydotool to get position; fall back to Qt
+            try:
+                out = subprocess.check_output(["ydotool", "getmouselocation"])
+                parts = out.decode().split()
+                x = int(parts[0].split(":")[1])
+                y = int(parts[1].split(":")[1])
+                return QPoint(x, y)
+            except Exception:
+                return QApplication.primaryScreen().geometry().center()
+
+        def create_hotkey_listener(self) -> AbstractHotkeyListener:
+            return WaylandHotkeyListener()
+
 
 ### Keybind capture dialog ###
 
@@ -111,149 +292,17 @@ class PositionWindow(QWidget):
         event.accept()
 
 
-### Platform click helpers ###
-
-def _click_windows(x: int, y: int) -> None:
-    win32api.SetCursorPos((x, y))
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x, y, 0, 0)
-
-
-def _click_linux(x: int, y: int) -> None:
-    subprocess.Popen(
-        ["ydotool", "mousemove", "--absolute", "-x", str(x), "-y", str(y)]
-    ).wait()
-    subprocess.Popen(["ydotool", "click", "0xC0"]).wait()
-
-
-def perform_click(x: int, y: int) -> None:
-    if PLATFORM_WINDOWS:
-        _click_windows(x, y)
-    else:
-        _click_linux(x, y)
-
-
-### Platform mouse-position helpers ###
-
-def get_cursor_pos() -> QPoint:
-    if PLATFORM_WINDOWS:
-        pos = win32api.GetCursorPos()
-        return QPoint(pos[0], pos[1])
-    else:
-        # Use ydotool to get position; fall back to Qt
-        try:
-            out = subprocess.check_output(["ydotool", "getmouselocation"])
-            parts = out.decode().split()
-            x = int(parts[0].split(":")[1])
-            y = int(parts[1].split(":")[1])
-            return QPoint(x, y)
-        except Exception:
-            return QApplication.primaryScreen().geometry().center()
-
-
-### Global hotkey listener ###
-
-if PLATFORM_WINDOWS:
-    import threading
-
-    class GlobalHotkeyListener(threading.Thread):
-        """Registers Win32 global hotkeys and fires callbacks."""
-
-        def __init__(self) -> None:
-            super().__init__(daemon=True)
-            self._bindings: dict[int, callable] = {}   # id -> callback
-            self._id_counter: int = 1
-            self._hwnd: Optional[int] = None
-
-        def register(self, key_sequence: QKeySequence, callback: callable) -> int:
-            hk_id = self._id_counter
-            self._id_counter += 1
-            self._bindings[hk_id] = (key_sequence, callback)
-            return hk_id
-
-        def unregister_all(self) -> None:
-            if self._hwnd:
-                for hk_id in list(self._bindings.keys()):
-                    ctypes.windll.user32.UnregisterHotKey(self._hwnd, hk_id)
-            self._bindings.clear()
-
-        def _qs_to_win32(self, qs: QKeySequence):
-            key = qs[0].key()
-            mods = qs[0].keyboardModifiers()
-            win_mod = 0
-            if mods & Qt.KeyboardModifier.AltModifier:
-                win_mod |= win32con.MOD_ALT
-            if mods & Qt.KeyboardModifier.ControlModifier:
-                win_mod |= win32con.MOD_CONTROL
-            if mods & Qt.KeyboardModifier.ShiftModifier:
-                win_mod |= win32con.MOD_SHIFT
-            if mods & Qt.KeyboardModifier.MetaModifier:
-                win_mod |= win32con.MOD_WIN
-            vk = int(key)
-            # Map Qt key to VK
-            vk_code = ctypes.windll.user32.VkKeyScanW(vk) & 0xFF
-            return win_mod, vk_code
-
-        def run(self) -> None:
-            import ctypes.wintypes as wt
-            # Create a message-only window handle via a dummy approach
-            for hk_id, (qs, _cb) in self._bindings.items():
-                mod, vk = self._qs_to_win32(qs)
-                ctypes.windll.user32.RegisterHotKey(None, hk_id, mod, vk)
-
-            msg = wt.MSG()
-            while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-                if msg.message == win32con.WM_HOTKEY:
-                    hk_id = msg.wParam
-                    if hk_id in self._bindings:
-                        _qs, cb = self._bindings[hk_id]
-                        cb()
-                ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
-                ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
-
-else:
-    # Linux: use keyboard library for global hotkeys
-    try:
-        import keyboard as kb_lib
-        _KB_AVAILABLE = True
-    except ImportError:
-        _KB_AVAILABLE = False
-
-    class GlobalHotkeyListener:  # type: ignore[no-redef]
-        def __init__(self) -> None:
-            self._hooks: list = []
-
-        def register(self, key_sequence: QKeySequence, callback: callable) -> int:
-            if not _KB_AVAILABLE:
-                return -1
-            hotkey_str = key_sequence.toString().lower().replace("+", "+")
-            hook = kb_lib.add_hotkey(hotkey_str, callback)
-            self._hooks.append(hook)
-            return len(self._hooks) - 1
-
-        def unregister_all(self) -> None:
-            if not _KB_AVAILABLE:
-                return
-            for hook in self._hooks:
-                try:
-                    kb_lib.remove_hotkey(hook)
-                except Exception:
-                    pass
-            self._hooks.clear()
-
-        def start(self) -> None:
-            pass  # keyboard library works without a thread
-
-
 ### Main window ###
 
 class MainWindow(QMainWindow):
     """Main application window with toolbar."""
 
-    def __init__(self) -> None:
+    def __init__(self, backend: Backend) -> None:
         super().__init__()
         self.setWindowTitle("Click Assistant")
         self.resize(400, 120)
+
+        self._backend = backend
 
         # State
         self._recording: bool = False
@@ -264,7 +313,7 @@ class MainWindow(QMainWindow):
         # Bindings: key_sequence string -> PositionWindow
         self._bindings: dict[str, PositionWindow] = {}
 
-        self._hotkey_listener: GlobalHotkeyListener = GlobalHotkeyListener()
+        self._hotkey_listener: Optional[AbstractHotkeyListener] = None
 
         self._build_toolbar()
         self._build_tray()
@@ -343,7 +392,7 @@ class MainWindow(QMainWindow):
             self._set_exclusive_mode("record")
             self._show_all_position_windows()
             # Capture current cursor position
-            pos: QPoint = get_cursor_pos()
+            pos: QPoint = self._backend.get_cursor_pos()
             # Ask for keybind
             dlg = KeybindDialog(self)
             if dlg.exec_() == QDialog.Accepted and dlg.key_sequence:
@@ -432,27 +481,24 @@ class MainWindow(QMainWindow):
     ### Keybind activation / deactivation ###
 
     def _activate_keybinds(self) -> None:
-        self._hotkey_listener = GlobalHotkeyListener()
+        self._hotkey_listener = self._backend.create_hotkey_listener()
         for ks_str, pw in self._bindings.items():
             ks = QKeySequence(ks_str)
             pos = pw.position
 
             def make_cb(x: int, y: int):
                 def cb():
-                    perform_click(x, y)
+                    self._backend.click(x, y)
                 return cb
 
             self._hotkey_listener.register(ks, make_cb(pos.x(), pos.y()))
 
-        if PLATFORM_WINDOWS:
-            self._hotkey_listener.start()
-        else:
-            self._hotkey_listener.start()
-
+        self._hotkey_listener.start()
         self._active = True
 
     def _deactivate_keybinds(self) -> None:
-        self._hotkey_listener.unregister_all()
+        if self._hotkey_listener:
+            self._hotkey_listener.unregister_all()
         self._active = False
 
     ### Tray helpers ###
@@ -483,7 +529,14 @@ class MainWindow(QMainWindow):
 def main() -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    window = MainWindow()
+    
+    # Create the appropriate backend for the platform
+    if PLATFORM_WINDOWS:
+        backend: Backend = WindowsBackend()
+    else:
+        backend = WaylandBackend()
+    
+    window = MainWindow(backend)
     window.show()
     sys.exit(app.exec())
 
