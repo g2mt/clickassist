@@ -1,7 +1,7 @@
 from typing import Optional
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QPushButton, QDialogButtonBox
+    QDialog, QVBoxLayout, QLabel, QPushButton, QDialogButtonBox, QLineEdit
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
@@ -17,9 +17,15 @@ class KeybindDialog(QDialog):
         self.key_sequence: Optional[QKeySequence] = None
 
         layout = QVBoxLayout(self)
+
         self.label = QLabel("Press any key to bind...", self)
         self.label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.label)
+
+        self.key_display = QLineEdit(self)
+        self.key_display.setReadOnly(True)
+        self.key_display.setPlaceholderText("No key bound")
+        layout.addWidget(self.key_display)
 
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         button_box.accepted.connect(self.accept)
@@ -33,5 +39,5 @@ class KeybindDialog(QDialog):
             return
         modifiers = event.modifiers()
         self.key_sequence = QKeySequence(int(modifiers) | int(key))
-        self.label.setText(f"Bound to: {self.key_sequence.toString()}")
+        self.key_display.setText(self.key_sequence.toString())
         self.accept()

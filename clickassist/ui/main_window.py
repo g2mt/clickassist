@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtCore import Qt, QPoint, QSize
 
-from clickassist.platform.backend import AbstractBackend
+from clickassist.platform.backend import Backend
 from clickassist.ui.keybind_dialog import KeybindDialog
 from clickassist.ui.position_window import PositionWindow
 
@@ -26,7 +26,7 @@ class Mode(Enum):
 class MainWindow(QMainWindow):
     """Main application window with toolbar."""
 
-    def __init__(self, backend: AbstractBackend):
+    def __init__(self, backend: Backend):
         super().__init__()
         self.setWindowTitle("Click Assistant")
         self.resize(400, 120)
@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
         # Bindings: key_sequence string -> PositionWindow
         self._bindings: dict[str, PositionWindow] = {}
 
-        self._key_listener: Optional[AbstractKeyListener] = None
+        self._key_listener: AbstractKeyListener = backend.create_key_listener()
 
         self._build_toolbar()
         self._build_tray()
@@ -138,9 +138,12 @@ class MainWindow(QMainWindow):
     def _set_active_mode(self, active: Mode):
         """Uncheck all mode buttons except the active one and set active mode."""
         self._active_mode = active
+
         self._act_record.setChecked(False)
         self._act_move.setChecked(False)
         self._act_delete.setChecked(False)
+
+        self._set_position_windows_movable(False)
 
         if active == Mode.ACTIVE:
             self._tray.show()

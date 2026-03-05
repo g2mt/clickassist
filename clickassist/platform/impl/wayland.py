@@ -3,7 +3,6 @@ import re
 import ctypes
 import ctypes.util
 import threading
-import queue
 import select
 from typing import Optional
 
@@ -13,8 +12,8 @@ from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
-from clickassist.platform.backend import AbstractBackend
-from clickassist.platform.key import AbstractKeyListener
+from clickassist.platform.backend import Backend
+from clickassist.platform.key import KeyListener
 
 
 # Load libudev and libinput from C library
@@ -87,13 +86,13 @@ _interface_instance = _LibinputInterface(
 )
 
 
-class WaylandKeyListener(AbstractKeyListener):
+class WaylandKeyListener(KeyListener):
     """
     Listens to keyboard events from libinput on seat0.
     """
 
     def __init__(self):
-        self._queue = queue.Queue(maxsize=16)
+        super().__init__()
         self._stop_event = threading.Event()
 
         # Set up udev
@@ -152,23 +151,11 @@ class WaylandKeyListener(AbstractKeyListener):
                     key_code = _libinput.libinput_event_keyboard_get_key(kb_event)
                     key_state = _libinput.libinput_event_keyboard_get_key_state(kb_event)
                     pressed = (key_state == LIBINPUT_KEY_STATE_PRESSED)
-                    try:
-                        self._queue.put_nowait((key_code, pressed))
-                    except queue.Full:
-                        # drop older events
-                        self._queue.get(False)
-                        self._queue.put_nowait((key_code, pressed))
+                    self._emit((key_code, pressed))
 
                 _libinput.libinput_event_destroy(event)
 
-    def next_key(self):
-        while True:
-            try:
-                yield self._queue.get()
-            except queue.Empty:
-                continue
-
-class WaylandBackend(AbstractBackend):
+class WaylandBackend(Backend):
     """Linux-specific backend implementation using uinput."""
 
     def __init__(self):
