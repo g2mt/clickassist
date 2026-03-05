@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtCore import Qt, QPoint, QRect
 
-from clickassist.ui.main_window import MainWindow
+if TYPE_CHECKING:
+    from clickassist.ui.main_window import MainWindow
 
 
 class PositionWindow(QWidget):
@@ -16,7 +17,7 @@ class PositionWindow(QWidget):
         self,
         position: QPoint,
         key: str,
-        main_window: MainWindow,
+        main_window: "MainWindow",
     ):
         super().__init__()
         self.main_window = main_window
