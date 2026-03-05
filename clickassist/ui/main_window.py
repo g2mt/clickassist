@@ -1,5 +1,6 @@
 import sys
 from typing import Optional
+from enum import Enum, auto
 
 from PySide6.QtWidgets import (
     QMainWindow, QToolBar, QWidget, QMessageBox,
@@ -13,6 +14,15 @@ from clickassist.ui.keybind_dialog import KeybindDialog
 from clickassist.ui.position_window import PositionWindow
 
 
+class Mode(Enum):
+    """Represents the current active mode of the application."""
+    NORMAL = auto()      # No special mode active
+    RECORDING = auto()   # Recording a new keybind
+    MOVE = auto()        # Moving a bound position
+    DELETE = auto()      # Deleting a bound position
+    ACTIVE = auto()      # Keybinds running / tray mode
+
+
 class MainWindow(QMainWindow):
     """Main application window with toolbar."""
 
@@ -24,10 +34,7 @@ class MainWindow(QMainWindow):
         self._backend = backend
 
         # State
-        self._recording: bool = False
-        self._move_mode: bool = False
-        self._delete_mode: bool = False
-        self._active: bool = False  # keybinds running / tray mode
+        self._active_mode: Mode = Mode.NORMAL
 
         # Bindings: key_sequence string -> PositionWindow
         self._bindings: dict[str, PositionWindow] = {}
@@ -98,6 +105,7 @@ class MainWindow(QMainWindow):
 
     def _on_start(self):
         """Minimise to tray and activate keybinds."""
+        self._active_mode = Mode.ACTIVE
         self._tray.show()
         self.hide()
         # Hide all position windows while active
@@ -105,9 +113,8 @@ class MainWindow(QMainWindow):
             pw.hide()
 
     def _on_record(self, checked: bool):
-        self._recording = checked
         if checked:
-            self._set_exclusive_mode("record")
+            self._set_active_mode(Mode.RECORDING)
             self._show_all_position_windows()
             # Capture current cursor position
             pos: QPoint = self._backend.get_cursor_pos()
@@ -126,43 +133,39 @@ class MainWindow(QMainWindow):
                     pw.mousePressEvent = self._make_pw_press_handler(pw, pw.mousePressEvent)
                     self._bindings[ks_str] = pw
             self._act_record.setChecked(False)
-            self._recording = False
+            self._active_mode = Mode.NORMAL
         else:
             self._show_all_position_windows()
 
     def _on_move(self, checked: bool):
-        self._move_mode = checked
         if checked:
-            self._set_exclusive_mode("move")
+            self._set_active_mode(Mode.MOVE)
             self._show_all_position_windows()
             self._set_position_windows_movable(True)
         else:
             self._set_position_windows_movable(False)
             self._act_move.setChecked(False)
-            self._move_mode = False
+            self._active_mode = Mode.NORMAL
 
     def _on_delete(self, checked: bool):
-        self._delete_mode = checked
         if checked:
-            self._set_exclusive_mode("delete")
+            self._set_active_mode(Mode.DELETE)
             self._show_all_position_windows()
         else:
             self._act_delete.setChecked(False)
-            self._delete_mode = False
+            self._active_mode = Mode.NORMAL
 
     ### Mode helpers ###
 
-    def _set_exclusive_mode(self, active: str):
-        """Uncheck all mode buttons except the active one."""
-        if active != "record":
+    def _set_active_mode(self, active: Mode):
+        """Uncheck all mode buttons except the active one and set active mode."""
+        self._active_mode = active
+        if active != Mode.RECORDING:
             self._act_record.setChecked(False)
-            self._recording = False
-        if active != "move":
+        if active != Mode.MOVE:
             self._act_move.setChecked(False)
-            self._move_mode = False
-        if active != "delete":
+        if active != Mode.DELETE:
             self._act_delete.setChecked(False)
-            self._delete_mode = False
 
     def _show_all_position_windows(self):
         for pw in self._bindings.values():
@@ -180,7 +183,7 @@ class MainWindow(QMainWindow):
     def _make_pw_press_handler(self, pw: PositionWindow, original_handler):
         """Wrap a PositionWindow's mousePressEvent to support delete mode."""
         def handler(event):
-            if self._delete_mode:
+            if self._active_mode == Mode.DELETE:
                 ks_str = pw.key_sequence.toString()
                 reply = QMessageBox.question(
                     self,
@@ -203,6 +206,7 @@ class MainWindow(QMainWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
+        self._active_mode = Mode.NORMAL
         self._tray.hide()
         self.show()
         self.raise_()
