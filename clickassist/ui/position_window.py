@@ -107,6 +107,7 @@ class PositionFrame(QWidget):
                     # Remove from bindings
                     if self.key in self.main_window._bindings:
                         del self.main_window._bindings[self.key]
+                    self.main_window._set_active_mode(Mode.NORMAL)
                 return
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
