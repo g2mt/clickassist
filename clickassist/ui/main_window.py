@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
     def __init__(self, backend: Backend):
         super().__init__()
         self.setWindowTitle("Click Assistant")
-        self.resize(400, 120)
+        self.resize(400, 30)
 
         self._backend = backend
 
@@ -58,7 +58,8 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self):
         toolbar: QToolBar = QToolBar("Main Toolbar", self)
         toolbar.setIconSize(QSize(24, 24))
-        self.addToolBar(toolbar)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.setCentralWidget(toolbar)
 
         # Start
         self._act_start = QAction(
