@@ -153,13 +153,11 @@ class MainWindow(QMainWindow):
                 except:
                     pass
             self.position_window.show()
+            self.activateWindow()
 
         if cur_mode == Mode.ACTIVE:
             self._tray.show()
             self.hide()
-            # Hide all position windows while active
-            for pw in self._bindings.values():
-                pw.hide()
             self._key_listener.key_event.connect(self._handle_key_event)
             self.position_window.hide()
 
@@ -167,7 +165,6 @@ class MainWindow(QMainWindow):
             self._tray.hide()
             self.show()
             self.raise_()
-            self.activateWindow()
 
         elif cur_mode == Mode.RECORDING:
             assert self._record_cb is None
