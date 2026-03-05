@@ -4,12 +4,14 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtCore import Qt, QPoint, QRect
 
+from .mode import Mode
+
 if TYPE_CHECKING:
     from clickassist.ui.main_window import MainWindow
 
 
-class PositionWindow(QWidget):
-    """Frameless window that shows a red circle at a bound mouse position."""
+class PositionFrame(QWidget):
+    """Frame that shows a red circle at a bound mouse position."""
 
     RADIUS: int = 16
 
@@ -34,7 +36,7 @@ class PositionWindow(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.move(position - QPoint(self.RADIUS, self.RADIUS))
+        self..move(position)
         self.show()
 
     ### painting ###

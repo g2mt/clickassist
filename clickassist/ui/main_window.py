@@ -1,6 +1,5 @@
 import sys
 from typing import Optional
-from enum import Enum, auto
 
 from PySide6.QtWidgets import (
     QMainWindow, QToolBar, QWidget, QMessageBox,
@@ -11,16 +10,8 @@ from PySide6.QtCore import Qt, QPoint, QSize
 
 from clickassist.platform.backend import Backend
 from clickassist.ui.keybind_dialog import KeybindDialog
-from clickassist.ui.position_window import PositionWindow
-
-
-class Mode(Enum):
-    """Represents the current active mode of the application."""
-    ACTIVE = auto()      # Keybinds running / tray mode
-    NORMAL = auto()      # No special mode active
-    RECORDING = auto()   # Recording a new keybind
-    MOVE = auto()        # Moving a bound position
-    DELETE = auto()      # Deleting a bound position
+from clickassist.ui.position_window import PositionFrame
+from .mode import Mode
 
 
 class MainWindow(QMainWindow):
@@ -31,13 +22,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Click Assistant")
         self.resize(400, 30)
 
-        self._backend = backend
+        self.backend = backend
 
         # State
         self._active_mode: Mode = Mode.NORMAL
 
         # Bindings: key_sequence string -> PositionWindow
-        self._bindings: dict[str, PositionWindow] = {}
+        self._bindings: dict[str, PositionFrame] = {}
 
         self._key_listener: KeyListener = backend.create_key_listener()
         self._record_cb = None
@@ -175,16 +166,24 @@ class MainWindow(QMainWindow):
                 self._key_listener.key_event.disconnect(self._record_cb)
                 self._record_cb = None
 
-                pos: QPoint = self._backend.get_cursor_pos()
+                try:
+                    pos: QPoint = self.backend.get_cursor_pos()
+                except Exception as e:
+                    QMessageDialog.error(
+                        self, "Error getting cursor position",
+                        str(e)
+                    )
+                    return
                 dlg = KeybindDialog(data[0])
                 def on_accept():
+                    key = dlg.key
                     if key in self._bindings:
                         QMessageBox.warning(
                             self, "Already bound",
                             f"Key '{key}' is already bound. Delete it first."
                         )
                     else:
-                        self._bindings[key] = PositionWindow(pos, key)
+                        self._bindings[key] = PositionFrame(pos, key, self)
                 dlg.accepted.connect(on_accept)
                 dlg.exec()
             self._record_cb = record_cb
