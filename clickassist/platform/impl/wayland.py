@@ -250,6 +250,7 @@ class KDEWaylandBackend(WaylandBackend):
         import shutil
         if shutil.which("kdotool") is None:
             raise RuntimeError("kdotool not found in PATH. Please install kdotool for KDE Wayland support.")
+        super().__init__()
 
     def get_cursor_pos(self) -> QPoint:
         # Run kdotool getmouselocation and parse output
