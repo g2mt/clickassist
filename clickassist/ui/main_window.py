@@ -145,9 +145,11 @@ class MainWindow(QMainWindow):
             if self._record_cb is not None:
                 self._key_listener.key_event.disconnect(self._record_cb)
                 self._record_cb = None
-        if active == Mode.ACTIVE:
-            self.position_window.hide()
-        else:
+        if active != Mode.ACTIVE:
+            try:
+                self._key_listener.key_event.disconnect(self._handle_key_event)
+            except:
+                pass
             self.position_window.show()
 
         if active == Mode.ACTIVE:
@@ -156,6 +158,8 @@ class MainWindow(QMainWindow):
             # Hide all position windows while active
             for pw in self._bindings.values():
                 pw.hide()
+            self._key_listener.key_event.connect(self._handle_key_event)
+            self.position_window.hide()
 
         elif active == Mode.NORMAL:
             self._tray.hide()
@@ -202,6 +206,24 @@ class MainWindow(QMainWindow):
         elif active == Mode.DELETE:
             self._act_delete.setChecked(True)
 
+
+    ### Key event handler ###
+
+    def _handle_key_event(self, data: tuple[str, bool]):
+        """Handle key events when in ACTIVE mode."""
+        if self._active_mode != Mode.ACTIVE:
+            return
+        
+        key, pressed = data
+        if position_frame := self._bindings.get(key):
+            # Get the center position of the frame
+            center_pos = position_frame.centerPosition()
+            if pressed:
+                # Mouse down when key is pressed
+                self.backend.mouse_down(center_pos.x(), center_pos.y())
+            else:
+                # Mouse up when key is released
+                self.backend.mouse_up(center_pos.x(), center_pos.y())
 
     ### Tray helpers ###
 

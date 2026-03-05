@@ -78,6 +78,9 @@ class PositionFrame(QWidget):
         self.move(adjusted_pos)
         self.show()
 
+    def centerPosition(self):
+        return self.pos() + QPoint(self.RADIUS, self.RADIUS)
+
     ### painting ###
 
     def paintEvent(self, event):
