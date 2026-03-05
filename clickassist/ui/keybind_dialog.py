@@ -4,8 +4,6 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QDialogButtonBox, QLineEdit
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence
-
 
 class KeybindDialog(QDialog):
     """Dialog that waits for the user to press a key and records it."""
@@ -14,7 +12,7 @@ class KeybindDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Press a key")
         self.setModal(True)
-        self.key_sequence: Optional[QKeySequence] = None
+        self.key: Optional[str] = None
 
         layout = QVBoxLayout(self)
 
@@ -37,7 +35,11 @@ class KeybindDialog(QDialog):
         if key in (Qt.Key.Key_unknown, Qt.Key.Key_Control, Qt.Key.Key_Shift,
                    Qt.Key.Key_Alt, Qt.Key.Key_Meta):
             return
-        modifiers = event.modifiers()
-        self.key_sequence = QKeySequence(int(modifiers) | int(key))
-        self.key_display.setText(self.key_sequence.toString())
+        self.key = key.toString()
+        self.key_display.setText(key.toString())
         self.accept()
+
+    def exec(self) -> Optional[str]:
+        if QDialog.exec_(self) != QDialog.Accepted:
+            return None
+        return self.key

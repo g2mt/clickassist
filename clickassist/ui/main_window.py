@@ -39,7 +39,8 @@ class MainWindow(QMainWindow):
         # Bindings: key_sequence string -> PositionWindow
         self._bindings: dict[str, PositionWindow] = {}
 
-        self._key_listener: AbstractKeyListener = backend.create_key_listener()
+        self._key_listener: KeyListener = backend.create_key_listener()
+        self._record_cb = None
 
         self._build_toolbar()
         self._build_tray()
@@ -137,6 +138,8 @@ class MainWindow(QMainWindow):
 
     def _set_active_mode(self, active: Mode):
         """Uncheck all mode buttons except the active one and set active mode."""
+        if active == self._active_mode:
+            return
         self._active_mode = active
 
         self._act_record.setChecked(False)
@@ -144,6 +147,9 @@ class MainWindow(QMainWindow):
         self._act_delete.setChecked(False)
 
         self._set_position_windows_movable(False)
+        if active != Mode.RECORDING:
+            self._key_listener.remove_cb(self._record_cb)
+            self._record_cb = None
 
         if active == Mode.ACTIVE:
             self._tray.show()
@@ -160,24 +166,24 @@ class MainWindow(QMainWindow):
             self._show_all_position_windows()
 
         elif active == Mode.RECORDING:
+            assert self._record_cb is None
             self._act_record.setChecked(True)
             self._show_all_position_windows()
-            # Capture current cursor position
-            pos: QPoint = self._backend.get_cursor_pos()
-            # Ask for keybind
-            dlg = KeybindDialog(self)
-            if dlg.exec_() == QDialog.Accepted and dlg.key_sequence:
-                ks: QKeySequence = dlg.key_sequence
-                ks_str: str = ks.toString()
-                if ks_str in self._bindings:
-                    QMessageBox.warning(
-                        self, "Already bound",
-                        f"Key '{ks_str}' is already bound. Delete it first."
-                    )
-                else:
-                    pw = PositionWindow(pos, ks)
-                    pw.mousePressEvent = self._make_pw_press_handler(pw, pw.mousePressEvent)
-                    self._bindings[ks_str] = pw
+            def record_cb():
+                # Capture current cursor position
+                pos: QPoint = self._backend.get_cursor_pos()
+                # Ask for keybind
+                dlg = KeybindDialog(self)
+                if key := dlg.exec():
+                    if key in self._bindings:
+                        QMessageBox.warning(
+                            self, "Already bound",
+                            f"Key '{key}' is already bound. Delete it first."
+                        )
+                    else:
+                        self._bindings[key] = PositionWindow(pos, key)
+            self._record_cb = record_cb
+            self._key_listener.add_cb(record_cb)
 
         elif active == Mode.MOVE:
             self._act_move.setChecked(True)
@@ -200,25 +206,6 @@ class MainWindow(QMainWindow):
                 pw.setCursor(Qt.CursorShape.SizeAllCursor)
             else:
                 pw.setCursor(Qt.CursorShape.ArrowCursor)
-
-    def _make_pw_press_handler(self, pw: PositionWindow, original_handler):
-        """Wrap a PositionWindow's mousePressEvent to support delete mode."""
-        def handler(event):
-            if self._active_mode == Mode.DELETE:
-                ks_str = pw.key_sequence.toString()
-                reply = QMessageBox.question(
-                    self,
-                    "Delete binding",
-                    f"Delete binding for key '{ks_str}'?",
-                    QMessageBox.Yes | QMessageBox.No,
-                )
-                if reply == QMessageBox.Yes:
-                    pw.hide()
-                    pw.deleteLater()
-                    del self._bindings[ks_str]
-                return
-            original_handler(event)
-        return handler
 
     ### Tray helpers ###
 

@@ -238,7 +238,34 @@ class WaylandBackend(Backend):
         self._send_touch(x, y, pressed=False)
 
     def get_cursor_pos(self) -> QPoint:
-        raise NotImplementedError("todo")
+        raise NotImplementedError()
 
     def create_key_listener(self) -> AbstractKeyListener:
         return WaylandKeyListener()
+
+class KDEWaylandBackend(WaylandBackend):
+    def __init__(self):
+        import shutil
+        if shutil.which("kdotool") is None:
+            raise RuntimeError("kdotool not found in PATH. Please install kdotool for KDE Wayland support.")
+
+    def get_cursor_pos(self) -> QPoint:
+        # Run kdotool getmouselocation and parse output
+        import subprocess
+        import re
+        try:
+            output = subprocess.check_output(
+                ["kdotool", "getmouselocation"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            )
+        except subprocess.CalledProcessError:
+            raise RuntimeError("Failed to get mouse location via kdotool")
+
+        # Expected output format: "x:605 y:437 screen:0 window:..."
+        match = re.search(r'x:(\d+)\s+y:(\d+)', output)
+        if not match:
+            raise RuntimeError(f"Could not parse kdotool output: {output}")
+        x = int(match.group(1))
+        y = int(match.group(2))
+        return QPoint(x, y)

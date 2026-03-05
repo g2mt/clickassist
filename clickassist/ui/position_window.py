@@ -4,6 +4,8 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtCore import Qt, QPoint, QRect
 
+from clickassist.ui.main_window import MainWindow
+
 
 class PositionWindow(QWidget):
     """Frameless window that shows a red circle at a bound mouse position."""
@@ -13,12 +15,13 @@ class PositionWindow(QWidget):
     def __init__(
         self,
         position: QPoint,
-        key_sequence: QKeySequence,
-        parent: Optional[QWidget] = None,
+        key: str,
+        main_window: MainWindow,
     ):
-        super().__init__(parent)
+        super().__init__()
+        self.main_window = main_window
         self.position: QPoint = position          # screen position of the click
-        self.key_sequence = key_sequence
+        self.key = key
         self._drag_offset: QPoint = QPoint()
         self._dragging: bool = False
 
@@ -46,6 +49,18 @@ class PositionWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            if self.main_window._active_mode == Mode.DELETE:
+                reply = QMessageBox.question(
+                    self,
+                    "Delete binding",
+                    f"Delete binding for key '{self.key}'?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if reply == QMessageBox.Yes:
+                    self.hide()
+                    self.deleteLater()
+                    del self._bindings[self.key]
+                return
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
         event.accept()
