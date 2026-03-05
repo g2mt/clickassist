@@ -130,29 +130,31 @@ class MainWindow(QMainWindow):
 
     ### Mode helpers ###
 
-    def _set_active_mode(self, active: Mode):
+    def _set_active_mode(self, cur_mode: Mode):
         """Uncheck all mode buttons except the active one and set active mode."""
-        if active == self._active_mode:
+        if cur_mode == self._active_mode:
             return
-        self._active_mode = active
+        previous_mode = self._active_mode
+        self._active_mode = cur_mode
 
         self._act_record.setChecked(False)
         self._act_move.setChecked(False)
         self._act_delete.setChecked(False)
 
         self.position_window.set_position_frames_movable(False)
-        if active != Mode.RECORDING:
+        if cur_mode != Mode.RECORDING:
             if self._record_cb is not None:
                 self._key_listener.key_event.disconnect(self._record_cb)
                 self._record_cb = None
-        if active != Mode.ACTIVE:
-            try:
-                self._key_listener.key_event.disconnect(self._handle_key_event)
-            except:
-                pass
+        if cur_mode != Mode.ACTIVE:
+            if previous_mode == Mode.ACTIVE:
+                try:
+                    self._key_listener.key_event.disconnect(self._handle_key_event)
+                except:
+                    pass
             self.position_window.show()
 
-        if active == Mode.ACTIVE:
+        if cur_mode == Mode.ACTIVE:
             self._tray.show()
             self.hide()
             # Hide all position windows while active
@@ -161,13 +163,13 @@ class MainWindow(QMainWindow):
             self._key_listener.key_event.connect(self._handle_key_event)
             self.position_window.hide()
 
-        elif active == Mode.NORMAL:
+        elif cur_mode == Mode.NORMAL:
             self._tray.hide()
             self.show()
             self.raise_()
             self.activateWindow()
 
-        elif active == Mode.RECORDING:
+        elif cur_mode == Mode.RECORDING:
             assert self._record_cb is None
             self._act_record.setChecked(True)
             def record_cb(data: tuple[str, bool]):
@@ -199,11 +201,11 @@ class MainWindow(QMainWindow):
             self._record_cb = record_cb
             self._key_listener.key_event.connect(record_cb)
 
-        elif active == Mode.MOVE:
+        elif cur_mode == Mode.MOVE:
             self._act_move.setChecked(True)
             self.position_window.set_position_frames_movable(True)
 
-        elif active == Mode.DELETE:
+        elif cur_mode == Mode.DELETE:
             self._act_delete.setChecked(True)
 
 
