@@ -148,8 +148,9 @@ class MainWindow(QMainWindow):
 
         self._set_position_windows_movable(False)
         if active != Mode.RECORDING:
-            self._key_listener.remove_cb(self._record_cb)
-            self._record_cb = None
+            if self._record_cb is not None:
+                self._key_listener.key_event.disconnect(self._record_cb)
+                self._record_cb = None
 
         if active == Mode.ACTIVE:
             self._tray.show()
@@ -169,12 +170,13 @@ class MainWindow(QMainWindow):
             assert self._record_cb is None
             self._act_record.setChecked(True)
             self._show_all_position_windows()
-            def record_cb():
-                # Capture current cursor position
+            def record_cb(data: tuple[str, bool]):
+                self._key_listener.key_event.disconnect(self._record_cb)
+                self._record_cb = None
+
                 pos: QPoint = self._backend.get_cursor_pos()
-                # Ask for keybind
-                dlg = KeybindDialog(self)
-                if key := dlg.exec():
+                dlg = KeybindDialog(data[0])
+                def on_accept():
                     if key in self._bindings:
                         QMessageBox.warning(
                             self, "Already bound",
@@ -182,8 +184,10 @@ class MainWindow(QMainWindow):
                         )
                     else:
                         self._bindings[key] = PositionWindow(pos, key)
+                dlg.accepted.connect(on_accept)
+                dlg.exec()
             self._record_cb = record_cb
-            self._key_listener.add_cb(record_cb)
+            self._key_listener.key_event.connect(record_cb)
 
         elif active == Mode.MOVE:
             self._act_move.setChecked(True)

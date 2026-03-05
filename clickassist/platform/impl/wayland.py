@@ -151,7 +151,7 @@ class WaylandKeyListener(KeyListener):
                     key_code = _libinput.libinput_event_keyboard_get_key(kb_event)
                     key_state = _libinput.libinput_event_keyboard_get_key_state(kb_event)
                     pressed = (key_state == LIBINPUT_KEY_STATE_PRESSED)
-                    self._emit((key_code, pressed))
+                    self.key_event.emit((chr(key_code), pressed))
 
                 _libinput.libinput_event_destroy(event)
 
