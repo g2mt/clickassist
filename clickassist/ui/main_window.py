@@ -16,11 +16,11 @@ from clickassist.ui.position_window import PositionWindow
 
 class Mode(Enum):
     """Represents the current active mode of the application."""
+    ACTIVE = auto()      # Keybinds running / tray mode
     NORMAL = auto()      # No special mode active
     RECORDING = auto()   # Recording a new keybind
     MOVE = auto()        # Moving a bound position
     DELETE = auto()      # Deleting a bound position
-    ACTIVE = auto()      # Keybinds running / tray mode
 
 
 class MainWindow(QMainWindow):
@@ -43,6 +43,14 @@ class MainWindow(QMainWindow):
 
         self._build_toolbar()
         self._build_tray()
+
+    ### Events ###
+
+    def closeEvent(self, event):
+        """Handle main window close event."""
+        # Quit the application when the main window is closed
+        QApplication.quit()
+        event.accept()
 
     ### UI construction ###
 
@@ -140,6 +148,14 @@ class MainWindow(QMainWindow):
             # Hide all position windows while active
             for pw in self._bindings.values():
                 pw.hide()
+
+        elif active == Mode.NORMAL:
+            self._tray.hide()
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self._show_all_position_windows()
+
         elif active == Mode.RECORDING:
             self._act_record.setChecked(True)
             self._show_all_position_windows()
@@ -159,10 +175,12 @@ class MainWindow(QMainWindow):
                     pw = PositionWindow(pos, ks)
                     pw.mousePressEvent = self._make_pw_press_handler(pw, pw.mousePressEvent)
                     self._bindings[ks_str] = pw
+
         elif active == Mode.MOVE:
             self._act_move.setChecked(True)
             self._show_all_position_windows()
             self._set_position_windows_movable(True)
+
         elif active == Mode.DELETE:
             self._act_delete.setChecked(True)
             self._show_all_position_windows()
@@ -202,13 +220,7 @@ class MainWindow(QMainWindow):
     ### Tray helpers ###
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self._restore_from_tray()
+        self._restore_from_tray()
 
     def _restore_from_tray(self):
         self._set_active_mode(Mode.NORMAL)
-        self._tray.hide()
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self._show_all_position_windows()
