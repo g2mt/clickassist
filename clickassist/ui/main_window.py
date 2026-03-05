@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QPoint, QSize
 
 from clickassist.platform.backend import Backend
 from clickassist.ui.keybind_dialog import KeybindDialog
-from clickassist.ui.position_window import PositionFrame
+from clickassist.ui.position_window import PositionFrame, PositionWindow
 from .mode import Mode
 
 
@@ -27,8 +27,10 @@ class MainWindow(QMainWindow):
         # State
         self._active_mode: Mode = Mode.NORMAL
 
-        # Bindings: key_sequence string -> PositionWindow
+        # Bindings: key_sequence string -> PositionFrame
         self._bindings: dict[str, PositionFrame] = {}
+        # Single overlay window to contain all position frames
+        self.position_window: PositionWindow = PositionWindow(self)
 
         self._key_listener: KeyListener = backend.create_key_listener()
         self._record_cb = None
@@ -138,11 +140,15 @@ class MainWindow(QMainWindow):
         self._act_move.setChecked(False)
         self._act_delete.setChecked(False)
 
-        self._set_position_windows_movable(False)
+        self.position_window.set_position_frames_movable(False)
         if active != Mode.RECORDING:
             if self._record_cb is not None:
                 self._key_listener.key_event.disconnect(self._record_cb)
                 self._record_cb = None
+        if active == Mode.ACTIVE:
+            self.position_window.hide()
+        else:
+            self.position_window.show()
 
         if active == Mode.ACTIVE:
             self._tray.show()
@@ -156,12 +162,10 @@ class MainWindow(QMainWindow):
             self.show()
             self.raise_()
             self.activateWindow()
-            self._show_all_position_windows()
 
         elif active == Mode.RECORDING:
             assert self._record_cb is None
             self._act_record.setChecked(True)
-            self._show_all_position_windows()
             def record_cb(data: tuple[str, bool]):
                 self._key_listener.key_event.disconnect(self._record_cb)
                 self._record_cb = None
@@ -169,7 +173,7 @@ class MainWindow(QMainWindow):
                 try:
                     pos: QPoint = self.backend.get_cursor_pos()
                 except Exception as e:
-                    QMessageDialog.error(
+                    QMessageBox.critical(
                         self, "Error getting cursor position",
                         str(e)
                     )
@@ -183,7 +187,9 @@ class MainWindow(QMainWindow):
                             f"Key '{key}' is already bound. Delete it first."
                         )
                     else:
-                        self._bindings[key] = PositionFrame(pos, key, self)
+                        position_frame = PositionFrame(pos, key, self)
+                        self._bindings[key] = position_frame
+                    self._set_active_mode(Mode.NORMAL)
                 dlg.accepted.connect(on_accept)
                 dlg.exec()
             self._record_cb = record_cb
@@ -191,25 +197,11 @@ class MainWindow(QMainWindow):
 
         elif active == Mode.MOVE:
             self._act_move.setChecked(True)
-            self._show_all_position_windows()
-            self._set_position_windows_movable(True)
+            self.position_window.set_position_frames_movable(True)
 
         elif active == Mode.DELETE:
             self._act_delete.setChecked(True)
-            self._show_all_position_windows()
 
-    def _show_all_position_windows(self):
-        for pw in self._bindings.values():
-            pw.show()
-
-    def _set_position_windows_movable(self, movable: bool):
-        """Enable or disable mouse tracking / dragging on position windows."""
-        for pw in self._bindings.values():
-            pw.setMouseTracking(movable)
-            if movable:
-                pw.setCursor(Qt.CursorShape.SizeAllCursor)
-            else:
-                pw.setCursor(Qt.CursorShape.ArrowCursor)
 
     ### Tray helpers ###
 

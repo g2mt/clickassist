@@ -1,6 +1,6 @@
 from typing import Optional, TYPE_CHECKING
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QMessageBox, QApplication
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtCore import Qt, QPoint, QRect
 
@@ -8,6 +8,50 @@ from .mode import Mode
 
 if TYPE_CHECKING:
     from clickassist.ui.main_window import MainWindow
+
+
+class PositionWindow(QWidget):
+    """Full screen overlay window that contains all PositionFrame widgets."""
+
+    def __init__(self, main_window: "MainWindow"):
+        super().__init__()
+        self.main_window = main_window
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        screen = QApplication.primaryScreen()
+        self.setGeometry(screen.geometry())
+        self.hide()
+
+    def paintEvent(self, event):
+        """Paint a semi-transparent black background."""
+        painter = QPainter(self)
+        painter.setBrush(QColor(0, 0, 0, 76))  # 76 is approximately 0.3 * 255
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(self.rect())
+
+    def showEvent(self, event):
+        """Resize to cover all screens when shown."""
+        # Get the combined geometry of all screens
+        screens = QApplication.screens()
+        if screens:
+            # We'll set the window to cover the primary screen for simplicity
+            # In a more robust implementation, we could cover all screens
+            screen_geometry = screens[0].geometry()
+            self.setGeometry(screen_geometry)
+        super().showEvent(event)
+
+    def set_position_frames_movable(self, movable: bool):
+        """Enable or disable mouse tracking / dragging on all position windows."""
+        for child in self.children():
+            if isinstance(child, PositionFrame):
+                child.setMouseTracking(movable)
+                if movable:
+                    child.setCursor(Qt.CursorShape.SizeAllCursor)
+                else:
+                    child.setCursor(Qt.CursorShape.ArrowCursor)
 
 
 class PositionFrame(QWidget):
@@ -21,22 +65,17 @@ class PositionFrame(QWidget):
         key: str,
         main_window: "MainWindow",
     ):
-        super().__init__()
+        super().__init__(main_window.position_window)
         self.main_window = main_window
-        self.position: QPoint = position          # screen position of the click
         self.key = key
         self._drag_offset: QPoint = QPoint()
         self._dragging: bool = False
 
         diameter = self.RADIUS * 2
         self.setFixedSize(diameter, diameter)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self..move(position)
+        adjusted_pos = position - QPoint(self.RADIUS, self.RADIUS)
+        self.move(adjusted_pos)
         self.show()
 
     ### painting ###
@@ -62,7 +101,9 @@ class PositionFrame(QWidget):
                 if reply == QMessageBox.Yes:
                     self.hide()
                     self.deleteLater()
-                    del self._bindings[self.key]
+                    # Remove from bindings
+                    if self.key in self.main_window._bindings:
+                        del self.main_window._bindings[self.key]
                 return
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -76,6 +117,4 @@ class PositionFrame(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
-            centre = self.frameGeometry().topLeft() + QPoint(self.RADIUS, self.RADIUS)
-            self.position = centre
         event.accept()
