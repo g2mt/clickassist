@@ -106,11 +106,6 @@ class MainWindow(QMainWindow):
     def _on_start(self):
         """Minimise to tray and activate keybinds."""
         self._set_active_mode(Mode.ACTIVE)
-        self._tray.show()
-        self.hide()
-        # Hide all position windows while active
-        for pw in self._bindings.values():
-            pw.hide()
 
     def _on_record(self, checked: bool):
         if checked:
@@ -139,7 +134,13 @@ class MainWindow(QMainWindow):
         self._act_move.setChecked(False)
         self._act_delete.setChecked(False)
 
-        if active == Mode.RECORDING:
+        if active == Mode.ACTIVE:
+            self._tray.show()
+            self.hide()
+            # Hide all position windows while active
+            for pw in self._bindings.values():
+                pw.hide()
+        elif active == Mode.RECORDING:
             self._act_record.setChecked(True)
             self._show_all_position_windows()
             # Capture current cursor position
