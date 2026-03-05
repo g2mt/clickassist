@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
 
     def _on_start(self):
         """Minimise to tray and activate keybinds."""
-        self._active_mode = Mode.ACTIVE
+        self._set_active_mode(Mode.ACTIVE)
         self._tray.show()
         self.hide()
         # Hide all position windows while active
@@ -115,6 +115,32 @@ class MainWindow(QMainWindow):
     def _on_record(self, checked: bool):
         if checked:
             self._set_active_mode(Mode.RECORDING)
+        else:
+            self._set_active_mode(Mode.NORMAL)
+
+    def _on_move(self, checked: bool):
+        if checked:
+            self._set_active_mode(Mode.MOVE)
+        else:
+            self._set_active_mode(Mode.NORMAL)
+
+    def _on_delete(self, checked: bool):
+        if checked:
+            self._set_active_mode(Mode.DELETE)
+        else:
+            self._set_active_mode(Mode.NORMAL)
+
+    ### Mode helpers ###
+
+    def _set_active_mode(self, active: Mode):
+        """Uncheck all mode buttons except the active one and set active mode."""
+        self._active_mode = active
+        self._act_record.setChecked(False)
+        self._act_move.setChecked(False)
+        self._act_delete.setChecked(False)
+
+        if active == Mode.RECORDING:
+            self._act_record.setChecked(True)
             self._show_all_position_windows()
             # Capture current cursor position
             pos: QPoint = self._backend.get_cursor_pos()
@@ -132,40 +158,13 @@ class MainWindow(QMainWindow):
                     pw = PositionWindow(pos, ks)
                     pw.mousePressEvent = self._make_pw_press_handler(pw, pw.mousePressEvent)
                     self._bindings[ks_str] = pw
-            self._act_record.setChecked(False)
-            self._active_mode = Mode.NORMAL
-        else:
-            self._show_all_position_windows()
-
-    def _on_move(self, checked: bool):
-        if checked:
-            self._set_active_mode(Mode.MOVE)
+        elif active == Mode.MOVE:
+            self._act_move.setChecked(True)
             self._show_all_position_windows()
             self._set_position_windows_movable(True)
-        else:
-            self._set_position_windows_movable(False)
-            self._act_move.setChecked(False)
-            self._active_mode = Mode.NORMAL
-
-    def _on_delete(self, checked: bool):
-        if checked:
-            self._set_active_mode(Mode.DELETE)
+        elif active == Mode.DELETE:
+            self._act_delete.setChecked(True)
             self._show_all_position_windows()
-        else:
-            self._act_delete.setChecked(False)
-            self._active_mode = Mode.NORMAL
-
-    ### Mode helpers ###
-
-    def _set_active_mode(self, active: Mode):
-        """Uncheck all mode buttons except the active one and set active mode."""
-        self._active_mode = active
-        if active != Mode.RECORDING:
-            self._act_record.setChecked(False)
-        if active != Mode.MOVE:
-            self._act_move.setChecked(False)
-        if active != Mode.DELETE:
-            self._act_delete.setChecked(False)
 
     def _show_all_position_windows(self):
         for pw in self._bindings.values():
@@ -206,7 +205,7 @@ class MainWindow(QMainWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
-        self._active_mode = Mode.NORMAL
+        self._set_active_mode(Mode.NORMAL)
         self._tray.hide()
         self.show()
         self.raise_()
