@@ -3,14 +3,15 @@
 ## 1. Overview
 
 **ClickAssist** is a Windows utility written in **Rust** using the **Win32
-API** (via the official `windows` crate, no heavy frameworks). It lets a user
-bind mouse positions to keyboard keys and then, in *start mode*, simulate
+API** (via the low-level `windows-sys` crate, no heavy frameworks). It lets a
+user bind mouse positions to keyboard keys and then, in *start mode*, simulate
 touchscreen touch events (press, release, move/gesture) by holding those keys.
 
 Design goals:
 
-- **Minimal dependencies** — use the official **`windows`** crate for Win32
-  bindings; nothing else beyond an optional tiny JSON helper for the config.
+- **Minimal dependencies** — use **`windows-sys`** for raw Win32 FFI
+  bindings, plus **`serde`**/**`serde_json`** for config (de)serialization.
+  No GUI frameworks, no async runtime.
 - **Small footprint** — single executable, lives in the taskbar/notification
   area, low CPU when idle.
 - **Responsive input** — key-to-touch latency must be low, so use low-level
@@ -24,11 +25,11 @@ Keep the dependency list as short as possible:
 
 | Purpose | Choice | Notes |
 |---|---|---|
-| Win32 FFI bindings | **`windows`** | The official Microsoft crate. Enable only the feature modules actually used (`Win32_UI_WindowsAndMessaging`, `Win32_UI_Input_KeyboardAndMouse`, `Win32_UI_Input_Pointer`, `Win32_UI_Shell`, `Win32_UI_Controls`, `Win32_Graphics_Gdi`, `Win32_Foundation`, `Win32_System_LibraryLoader`, `Win32_UI_HiDpi`). |
-| Config (de)serialization | `serde` + `serde_json` (optional) | For reading/writing `Documents/clickassist.json`. If we want to avoid even this, hand-roll a tiny JSON writer/reader in `config.rs`. |
+| Win32 FFI bindings | **`windows-sys`** | The official Microsoft *raw* bindings crate: plain `extern "system"` function signatures and struct/type definitions, no wrapper types, no `Result<T, windows::core::Error>` ergonomics. Enable only the feature modules actually used (`Win32_UI_WindowsAndMessaging`, `Win32_UI_Input_KeyboardAndMouse`, `Win32_UI_Input_Pointer`, `Win32_UI_Shell`, `Win32_UI_Controls`, `Win32_Graphics_Gdi`, `Win32_Foundation`, `Win32_System_LibraryLoader`, `Win32_UI_HiDpi`). Because there is no `windows::core::Result`/`HRESULT`-to-`Result` conversion, error handling is done manually via return-value checks and `GetLastError`. |
+| Config (de)serialization | **`serde`** (with `derive`) + **`serde_json`** | Used for reading/writing `Documents/clickassist.json`. `Binding`/`Config` structs derive `Serialize`/`Deserialize`; no hand-rolled JSON parsing. |
 
 Everything else (event loop, tray icon, window, input injection, overlay) is
-built on Win32 primitives from the `windows` crate.
+built on Win32 primitives from `windows-sys`.
 
 ### Key Win32 surfaces used
 
@@ -75,8 +76,8 @@ built on Win32 primitives from the `windows` crate.
 |      v            v               v            v          |
 |  +--------+  +-----------+  +-----------+  +-----------+   |
 |  | Input  |  | Touch     |  | Overlay   |  | Config    |   |
-|  | Hook   |  | Injection |  | (dots +   |  | (JSON in  |   |
-|  |        |  | Engine    |  |  labels)  |  | Documents)|   |
+|  | Hook   |  | Injection |  | (dots +   |  | (JSON via |   |
+|  |        |  | Engine    |  |  labels)  |  | serde)    |   |
 |  +--------+  +-----------+  +-----------+  +-----------+   |
 +-----------------------------------------------------------+
 ```
@@ -90,9 +91,10 @@ Each module lists an implementation **difficulty** and the key
 
 ### `src/main.rs` — **[EASY]**
 Entry point: DPI awareness, register class, build window, install hook, run the
-message loop, clean up on exit.
+message loop, clean up on exit. Since `windows-sys` has no `windows::core::Result`
+wrapper, `main` returns a plain exit code and errors are checked manually.
 ```rust
-fn main() -> windows::core::Result<()>;
+fn main() -> i32;
 fn run_message_loop() -> i32;
 ```
 
@@ -191,25 +193,30 @@ fn paint_bindings(hdc: HDC, bindings: &HashMap<u32, POINT>); // Ellipse + center
 ### `src/bindings.rs` — **[EASY]**
 Key -> position map operations and virtual-key <-> label helpers.
 ```rust
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Binding { vk: u32, x: i32, y: i32 }
 fn vk_to_label(vk: u32) -> String;
 fn upsert(bindings: &mut HashMap<u32, POINT>, vk: u32, pos: POINT);
 ```
 
 ### `src/config.rs` — **[EASY]**
-Persist/load bindings to `Documents/clickassist.json`.
+Persist/load bindings to `Documents/clickassist.json` using `serde`/`serde_json`.
 ```rust
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Config { bindings: Vec<Binding> }
 fn config_path() -> PathBuf;                 // SHGetKnownFolderPath(FOLDERID_Documents)
-fn load() -> Config;
-fn save(cfg: &Config) -> std::io::Result<()>;
+fn load() -> Config;                          // serde_json::from_str
+fn save(cfg: &Config) -> std::io::Result<()>; // serde_json::to_string_pretty
 ```
 
 ### `src/win.rs` — **[EASY]**
-Thin Win32 helpers (wide strings, error checks, DPI).
+Thin Win32 helpers (wide strings, error checks, DPI). Since `windows-sys` is a
+raw binding crate, this module also centralizes `GetLastError`-based error
+checking helpers normally provided by higher-level wrapper crates.
 ```rust
 fn wide(s: &str) -> Vec<u16>;
 fn set_dpi_awareness();
+fn last_error() -> u32; // wraps GetLastError()
 ```
 
 ---
@@ -343,7 +350,7 @@ fn paint_bindings(hdc: HDC, bindings: &HashMap<u32, POINT>) {
 3. Low-level keyboard hook is active; on the next **key down**:
    - Capture cursor position with `GetCursorPos` → `POINT`.
    - Store `bindings.insert(vk, pos)`.
-   - Persist to `Documents/clickassist.json` (see §13).
+   - Persist to `Documents/clickassist.json` via `serde_json` (see §13).
    - If the overlay is visible, `InvalidateRect` to redraw the new dot/label.
    - (Optional) allow binding multiple keys in a row until the user clicks
      Record again / presses `Esc` to finish.
@@ -455,8 +462,10 @@ to avoid blocking the hook chain.
   ```
 - Loaded once at startup; saved whenever bindings change (after a bind in
   Record mode, or on exit).
-- Serialization via `serde_json` (optional). To stay fully dependency-free, a
-  hand-rolled writer/reader in `config.rs` can emit/parse this small schema.
+- Serialization via `serde` + `serde_json`: `Binding` and `Config` derive
+  `Serialize`/`Deserialize`; `load()` uses `serde_json::from_str`, `save()`
+  uses `serde_json::to_string_pretty`. These are now mandatory dependencies —
+  no hand-rolled JSON parsing.
 
 ---
 
@@ -492,3 +501,8 @@ to avoid blocking the hook chain.
   Started mode while non-bound keys pass through normally.
 - **Overlay redraw**: keep the click-through overlay in sync with binding
   changes and monitor topology changes (`WM_DISPLAYCHANGE`).
+- **`windows-sys` ergonomics**: since this crate exposes raw FFI without the
+  `windows::core::Result`/`HRESULT` convenience wrappers, every Win32 call
+  site must manually check return values (`BOOL`, `HRESULT`, null handles) and
+  call `GetLastError` where appropriate. Centralize this in `src/win.rs` to
+  avoid scattering unsafe error-checking boilerplate across modules.
