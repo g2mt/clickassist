@@ -262,7 +262,7 @@ impl AppState {
                 if let Some(anchor) = self.active.get(&anchor_vk) {
                     let from = anchor.current_pos;
                     // Inject interpolated move
-                    touch::touch_move(anchor.pointer_id, from, pos, 8);
+                    touch::touch_move(anchor.pointer_id, from, pos);
                     // Update active touch position
                     if let Some(at) = self.active.get_mut(&anchor_vk) {
                         at.current_pos = pos;

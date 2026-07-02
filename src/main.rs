@@ -22,7 +22,7 @@ use std::mem;
 
 use windows_sys::Win32::Foundation::{HINSTANCE, POINT};
 use windows_sys::Win32::Graphics::Gdi::{
-    RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow,
+    RedrawWindow, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -42,7 +42,7 @@ fn main() {
     let hinstance: HINSTANCE = unsafe { GetModuleHandleW(std::ptr::null()) };
 
     // ---------- Initialise touch injection ----------
-    touch::init_touch_injection();
+    touch::init_touch_injection(10);
 
     // ---------- Create windows ----------
     let main_hwnd = window::create_main_window(hinstance);
