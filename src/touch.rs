@@ -111,6 +111,19 @@ struct Transition {
     to: POINT,
 }
 
+impl std::fmt::Debug for Transition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Transition")
+            .field("elapsed", &self.start.elapsed().as_secs_f64())
+            .field("duration", &self.duration.as_secs_f64())
+            .field("from.x", &self.from.x)
+            .field("from.y", &self.from.y)
+            .field("to.x", &self.to.x)
+            .field("to.y", &self.to.y)
+            .finish()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Singleton engine state
 // ---------------------------------------------------------------------------
@@ -220,6 +233,9 @@ fn touch_thread(rx: Receiver<TouchCommand>) {
     let mut infos: Vec<POINTER_TOUCH_INFO> = Vec::new();
 
     loop {
+        // wait at least 1 ms to prevent timeout
+        std::thread::sleep(Duration::from_millis(1));
+
         let now = Instant::now();
 
         // ---- Apply any active transitions for this frame ----
@@ -253,6 +269,9 @@ fn touch_thread(rx: Receiver<TouchCommand>) {
                 InjectTouchInput(infos.len() as u32, infos.as_ptr());
             }
         }
+
+        // wait at least 1 ms to prevent timeout
+        std::thread::sleep(Duration::from_millis(2));
 
         // ---- Wait for the next command (16 ms timeout so animation
         //      continues at ~60 Hz) ----
@@ -324,6 +343,7 @@ fn touch_thread(rx: Receiver<TouchCommand>) {
                 infos[idx].pointerInfo.pointerFlags =
                     POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_UPDATE;
 
+                eprintln!("existing: {:?}", metas[idx].transition);
                 // Record the transition.  The worker loop will interpolate
                 // each frame until `duration` is reached.
                 metas[idx].transition = Some(Transition {

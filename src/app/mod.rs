@@ -28,36 +28,13 @@ pub enum Mode {
 }
 
 // ---------------------------------------------------------------------------
-// ActiveTouch
-// ---------------------------------------------------------------------------
-
-/// Tracks an in-progress touch pointer.
-#[derive(Clone)]
-pub struct ActiveTouch {
-    pub pointer_id: u32,
-    pub current_pos: POINT,
-}
-
-impl std::fmt::Debug for ActiveTouch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ActiveTouch")
-            .field("pointer_id", &self.pointer_id)
-            .field(
-                "current_pos",
-                &format!("({}, {})", self.current_pos.x, self.current_pos.y),
-            )
-            .finish()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // AppState
 // ---------------------------------------------------------------------------
 
 pub struct AppState {
     pub mode: Mode,
     pub bindings: HashMap<u32, POINT>,
-    pub active: HashMap<u32, ActiveTouch>,
+    pub active: HashMap<u32, u32>,
     pub next_pointer_id: u32,
     pub ctrl_down: bool,
     pub gesture_anchor: Option<u32>,
@@ -281,56 +258,36 @@ impl AppState {
 
         if self.ctrl_down {
             if let Some(anchor_vk) = self.gesture_anchor {
+                if anchor_vk == vk {
+                    return;
+                }
                 // Gesture move: drag anchor to this key's position
-                if let Some(anchor) = self.active.get(&anchor_vk) {
-                    let from = anchor.current_pos;
+                if let Some(&pointer_id) = self.active.get(&anchor_vk) {
+                    let from = self.bindings[&anchor_vk];
                     // Inject interpolated move
-                    touch::touch_move(anchor.pointer_id, from, pos);
-                    // Update active touch position
-                    if let Some(at) = self.active.get_mut(&anchor_vk) {
-                        at.current_pos = pos;
-                    }
+                    touch::touch_move(pointer_id, from, pos);
                 }
             } else {
                 // First key while Ctrl held = gesture anchor
                 self.gesture_anchor = Some(vk);
                 let pid = self.allocate_pointer_id();
-                if self
-                    .active
-                    .insert(
-                        vk,
-                        ActiveTouch {
-                            pointer_id: pid,
-                            current_pos: pos,
-                        },
-                    )
-                    .is_none()
-                {
+                if self.active.insert(vk, pid).is_none() {
                     touch::touch_down(pid, pos);
                 }
             }
         } else {
             // Simple touch press
             let pid = self.allocate_pointer_id();
-            if self
-                .active
-                .insert(
-                    vk,
-                    ActiveTouch {
-                        pointer_id: pid,
-                        current_pos: pos,
-                    },
-                )
-                .is_none()
-            {
+            if self.active.insert(vk, pid).is_none() {
                 touch::touch_down(pid, pos);
             }
         }
     }
 
     fn release_touch(&mut self, vk: u32) {
-        if let Some(at) = self.active.remove(&vk) {
-            touch::touch_up(at.pointer_id, at.current_pos);
+        if let Some(pid) = self.active.remove(&vk) {
+            let pos = self.bindings[&vk];
+            touch::touch_up(pid, pos);
         }
     }
 
