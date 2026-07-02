@@ -49,6 +49,38 @@ enum TouchCommand {
     Shutdown,
 }
 
+impl std::fmt::Debug for TouchCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Down { pointer_id, pos } => f
+                .debug_struct("Down")
+                .field("pointer_id", pointer_id)
+                .field("pos.x", &pos.x)
+                .field("pos.y", &pos.y)
+                .finish(),
+            Self::Up { pointer_id, pos } => f
+                .debug_struct("Up")
+                .field("pointer_id", pointer_id)
+                .field("pos.x", &pos.x)
+                .field("pos.y", &pos.y)
+                .finish(),
+            Self::Move {
+                pointer_id,
+                from,
+                to,
+            } => f
+                .debug_struct("Move")
+                .field("pointer_id", pointer_id)
+                .field("from.x", &from.x)
+                .field("from.y", &from.y)
+                .field("to.x", &to.x)
+                .field("to.y", &to.y)
+                .finish(),
+            Self::Shutdown => f.debug_struct("Shutdown").finish(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Additional metadata tracked alongside each POINTER_TOUCH_INFO
 // ---------------------------------------------------------------------------
@@ -224,7 +256,11 @@ fn touch_thread(rx: Receiver<TouchCommand>) {
 
         // ---- Wait for the next command (16 ms timeout so animation
         //      continues at ~60 Hz) ----
-        match rx.recv_timeout(Duration::from_millis(16)) {
+        let command = rx.recv_timeout(Duration::from_millis(16));
+        if command.is_ok() {
+            eprintln!("{:?}", command);
+        }
+        match command {
             Ok(TouchCommand::Down { pointer_id, pos }) => {
                 // Ignore duplicate downs for an already-active pointer.
                 if metas.iter().any(|m| m.pointer_id == pointer_id) {

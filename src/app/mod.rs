@@ -102,11 +102,9 @@ impl AppState {
             constants::ID_SHOW_POSITIONS => self.toggle_overlay(),
             constants::ID_START => self.enter_started(),
             constants::ID_STOP => self.stop(), // tray "Stop"
-            constants::ID_QUIT => {
-                unsafe {
-                    PostQuitMessage(0);
-                }
-            }
+            constants::ID_QUIT => unsafe {
+                PostQuitMessage(0);
+            },
             constants::ID_RESET => self.reset_bindings(),
             _ => {}
         }
@@ -275,6 +273,10 @@ impl AppState {
     // ---------- Touch injection ----------
 
     fn process_bound_key_down(&mut self, vk: u32) {
+        eprintln!(
+            "key down: {vk}, gesture_anchor: {:?}, ctrl: {}",
+            self.gesture_anchor, self.ctrl_down
+        );
         let pos = self.bindings[&vk];
 
         if self.ctrl_down {
