@@ -21,4 +21,3 @@ pub fn set_dpi_awareness() {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 }
-

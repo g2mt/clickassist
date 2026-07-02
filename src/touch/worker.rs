@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{GetLastError, POINT, RECT};
 use windows_sys::Win32::UI::Input::Pointer::{
-    InitializeTouchInjection, InjectTouchInput, POINTER_FLAGS, POINTER_FLAG_DOWN,
-    POINTER_FLAG_INCONTACT, POINTER_FLAG_INRANGE, POINTER_FLAG_UP, POINTER_FLAG_UPDATE,
-    POINTER_TOUCH_INFO, TOUCH_FEEDBACK_DEFAULT,
+    InitializeTouchInjection, InjectTouchInput, POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT,
+    POINTER_FLAG_INRANGE, POINTER_FLAG_UP, POINTER_FLAG_UPDATE, POINTER_FLAGS, POINTER_TOUCH_INFO,
+    TOUCH_FEEDBACK_DEFAULT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     PT_TOUCH, TOUCH_FLAG_NONE, TOUCH_MASK_CONTACTAREA, TOUCH_MASK_ORIENTATION, TOUCH_MASK_PRESSURE,
@@ -310,7 +310,10 @@ fn drain_commands(
                 to,
             }) => {
                 if let Some(c) = contacts.iter_mut().find(|c| c.pointer_id == pointer_id) {
-                    if let Some(t)  =c.transition.as_ref() && t.to.x == to.x && t.to.y == to.y {
+                    if let Some(t) = c.transition.as_ref()
+                        && t.to.x == to.x
+                        && t.to.y == to.y
+                    {
                         continue;
                     }
                     c.transition = Some(Transition {

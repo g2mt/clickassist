@@ -80,8 +80,7 @@ pub fn init_touch_injection(max_contacts: u32) {
     stdout
         .read_line(&mut line)
         .expect("failed to read ready signal from touch-worker");
-    let v: serde_json::Value =
-        serde_json::from_str(&line).expect("invalid JSON from touch-worker");
+    let v: serde_json::Value = serde_json::from_str(&line).expect("invalid JSON from touch-worker");
     if v["type"] != "ready" {
         eprintln!("[touch] unexpected worker startup message: {line}");
     }
@@ -171,8 +170,8 @@ impl EngineState {
         let _ = self.child.kill();
         let _ = self.child.wait();
 
-        let exe = std::env::current_exe()
-            .expect("cannot get executable path for touch-worker restart");
+        let exe =
+            std::env::current_exe().expect("cannot get executable path for touch-worker restart");
 
         let mut child = Command::new(&exe)
             .args([
@@ -187,8 +186,7 @@ impl EngineState {
             .expect("failed to restart touch-worker");
 
         self.stdin = child.stdin.take().expect("restarted child has no stdin");
-        self.stdout =
-            BufReader::new(child.stdout.take().expect("restarted child has no stdout"));
+        self.stdout = BufReader::new(child.stdout.take().expect("restarted child has no stdout"));
         self.child = child;
 
         // Wait for ready.
