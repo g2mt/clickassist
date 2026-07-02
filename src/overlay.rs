@@ -183,6 +183,12 @@ fn draw_centered_label(hdc: HDC, cx: i32, top_y: i32, label: &str) {
         SetBkMode(hdc, TRANSPARENT as i32);
         SetTextColor(hdc, 0x0000FF);
 
-        TextOutW(hdc, text_x, top_y, wide_label.as_ptr(), len as i32);
+        TextOutW(
+            hdc,
+            text_x,
+            top_y - size.cy,
+            wide_label.as_ptr(),
+            len as i32,
+        );
     }
 }
