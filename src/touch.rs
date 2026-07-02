@@ -104,21 +104,20 @@ static ENGINE: Mutex<Option<EngineState>> = Mutex::new(None);
 ///
 /// Call **once** at startup.
 pub fn init_touch_injection(max_contacts: u32) {
-    // 1. Initialise the OS touch injection subsystem.
-    let ok = unsafe { InitializeTouchInjection(max_contacts, TOUCH_FEEDBACK_DEFAULT) };
-    if ok == 0 {
-        // FALSE – touch injection may not be available on this platform
-        // (pre-Win8).  The engine still returns a valid handle so the caller
-        // doesn't crash; InjectTouchInput calls will simply be no-ops.
-        eprintln!("[touch] InitializeTouchInjection failed");
-    }
-
-    // 2. Create the command channel and spawn the worker.
+    // Create the command channel and spawn the worker.
     let (tx, rx) = mpsc::channel::<TouchCommand>();
 
     let handle = std::thread::Builder::new()
         .name("touch-inject".into())
-        .spawn(move || touch_thread(rx))
+        .spawn(move || {
+            // InitializeTouchInjection must be called from the same thread
+            // that will call InjectTouchInput.
+            let ok = unsafe { InitializeTouchInjection(max_contacts, TOUCH_FEEDBACK_DEFAULT) };
+            if ok == 0 {
+                eprintln!("[touch] InitializeTouchInjection failed");
+            }
+            touch_thread(rx);
+        })
         .expect("failed to spawn touch injection thread");
 
     let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
