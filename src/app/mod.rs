@@ -272,26 +272,37 @@ impl AppState {
                 // First key while Ctrl held = gesture anchor
                 self.gesture_anchor = Some(vk);
                 let pid = self.allocate_pointer_id();
-                touch::touch_down(pid, pos);
-                self.active.insert(
-                    vk,
-                    ActiveTouch {
-                        pointer_id: pid,
-                        current_pos: pos,
-                    },
-                );
+                if self
+                    .active
+                    .insert(
+                        vk,
+                        ActiveTouch {
+                            pointer_id: pid,
+                            current_pos: pos,
+                        },
+                    )
+                    .is_none()
+                {
+                    touch::touch_down(pid, pos);
+                }
             }
         } else {
             // Simple touch press
             let pid = self.allocate_pointer_id();
             touch::touch_down(pid, pos);
-            self.active.insert(
-                vk,
-                ActiveTouch {
-                    pointer_id: pid,
-                    current_pos: pos,
-                },
-            );
+            if self
+                .active
+                .insert(
+                    vk,
+                    ActiveTouch {
+                        pointer_id: pid,
+                        current_pos: pos,
+                    },
+                )
+                .is_none()
+            {
+                touch::touch_down(pid, pos);
+            }
         }
     }
 

@@ -54,7 +54,7 @@ pub unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: L
     let (down, swallow) = match wparam as u32 {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
             // Auto-repeat filter: bit 30 is set for repeats
-            let is_repeat = (kbd.flags & 0x4000_0000) != 0;
+            let is_repeat = (kbd.flags & (1u32 << 30)) != 0;
             if is_repeat {
                 let active = STATE.with(|s| s.borrow().active.contains_key(&vk_code));
                 let bound = STATE.with(|s| s.borrow().bindings.contains_key(&vk_code));

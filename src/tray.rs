@@ -1,6 +1,7 @@
 //! Notification-area (tray) icon and context menu.
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -104,6 +105,12 @@ pub fn show_tray_menu(hwnd: HWND) {
             constants::ID_TRAY_SHOW => {
                 ShowWindow(hwnd, SW_SHOW);
                 SetForegroundWindow(hwnd);
+                RedrawWindow(
+                    hwnd,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+                );
             }
             constants::ID_TRAY_STOP => {
                 PostMessageW(hwnd, WM_COMMAND, constants::ID_STOP as WPARAM, 0);

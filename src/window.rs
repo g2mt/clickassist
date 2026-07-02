@@ -70,10 +70,10 @@ pub fn create_main_window(hinstance: HINSTANCE) -> HWND {
 /// child `BUTTON` controls laid out in a row.
 fn create_buttons(parent: HWND) {
     let buttons = [
-        (crate::app::constants::ID_QUIT, "Quit"),
         (crate::app::constants::ID_RECORD, "Record"),
         (crate::app::constants::ID_SHOW_POSITIONS, "Show Positions"),
         (crate::app::constants::ID_START, "Start"),
+        (crate::app::constants::ID_QUIT, "Quit"),
     ];
 
     let btn_class = win::wide("BUTTON");
