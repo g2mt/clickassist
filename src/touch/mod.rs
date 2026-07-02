@@ -19,6 +19,7 @@
 //! If `InjectTouchInput` fails the worker exits.  The parent detects a broken
 //! pipe and transparently restarts the worker process.
 
+mod cmd;
 mod worker;
 
 use std::io::{BufRead, BufReader, Write};
@@ -26,6 +27,8 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 
 use windows_sys::Win32::Foundation::POINT;
+
+use crate::touch::cmd::{Cmd, WorkerResponse};
 
 // ---------------------------------------------------------------------------
 // Pointer ID
@@ -80,9 +83,10 @@ pub fn init_touch_injection(max_contacts: u32) {
     stdout
         .read_line(&mut line)
         .expect("failed to read ready signal from touch-worker");
-    let v: serde_json::Value = serde_json::from_str(&line).expect("invalid JSON from touch-worker");
-    if v["type"] != "ready" {
-        eprintln!("[touch] unexpected worker startup message: {line}");
+    match serde_json::from_str::<WorkerResponse>(&line) {
+        Ok(WorkerResponse::Ready) => {}
+        Ok(other) => eprintln!("[touch] unexpected worker startup message: {other:?}"),
+        Err(e) => eprintln!("[touch] invalid JSON from touch-worker: {e}"),
     }
 
     let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
@@ -100,8 +104,8 @@ pub fn deinit_touch_injection() {
     let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
     if let Some(mut state) = guard.take() {
         // Fire-and-forget: even if the child has already exited, ignore.
-        let cmd = serde_json::json!({"cmd": "shutdown"});
-        let _ = writeln!(state.stdin, "{cmd}");
+        let cmd = Cmd::Shutdown;
+        let _ = writeln!(state.stdin, "{}", serde_json::to_string(&cmd).unwrap());
         let _ = state.stdin.flush();
         let _ = state.child.wait();
     }
@@ -132,8 +136,14 @@ pub fn touch_down(pos: POINT) -> Option<PointerId> {
 pub fn touch_up(pid: PointerId, pos: POINT) {
     let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
     if let Some(ref mut state) = *guard {
-        let cmd = serde_json::json!({"cmd": "up", "pointer_id": pid.0, "x": pos.x, "y": pos.y});
-        if writeln!(state.stdin, "{cmd}").is_err() || state.stdin.flush().is_err() {
+        let cmd = Cmd::Up {
+            pointer_id: pid.0,
+            x: pos.x,
+            y: pos.y,
+        };
+        if writeln!(state.stdin, "{}", serde_json::to_string(&cmd).unwrap()).is_err()
+            || state.stdin.flush().is_err()
+        {
             state.restart();
         }
     }
@@ -145,15 +155,16 @@ pub fn touch_up(pid: PointerId, pos: POINT) {
 pub fn touch_move(pid: &PointerId, from: POINT, to: POINT) {
     let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
     if let Some(ref mut state) = *guard {
-        let cmd = serde_json::json!({
-            "cmd": "move",
-            "pointer_id": pid.0,
-            "from_x": from.x,
-            "from_y": from.y,
-            "to_x": to.x,
-            "to_y": to.y,
-        });
-        if writeln!(state.stdin, "{cmd}").is_err() || state.stdin.flush().is_err() {
+        let cmd = Cmd::Move {
+            pointer_id: pid.0,
+            from_x: from.x,
+            from_y: from.y,
+            to_x: to.x,
+            to_y: to.y,
+        };
+        if writeln!(state.stdin, "{}", serde_json::to_string(&cmd).unwrap()).is_err()
+            || state.stdin.flush().is_err()
+        {
             state.restart();
         }
     }
@@ -194,17 +205,17 @@ impl EngineState {
         self.stdout
             .read_line(&mut line)
             .expect("failed to read ready signal from restarted touch-worker");
-        let v: serde_json::Value =
-            serde_json::from_str(&line).expect("invalid JSON from restarted touch-worker");
-        if v["type"] != "ready" {
-            eprintln!("[touch] unexpected worker restart message: {line}");
+        match serde_json::from_str::<WorkerResponse>(&line) {
+            Ok(WorkerResponse::Ready) => {}
+            Ok(other) => eprintln!("[touch] unexpected worker restart message: {other:?}"),
+            Err(e) => eprintln!("[touch] invalid JSON from restarted touch-worker: {e}"),
         }
     }
 }
 
 fn try_touch_down(state: &mut EngineState, pos: POINT) -> Option<PointerId> {
-    let cmd = serde_json::json!({"cmd": "down", "x": pos.x, "y": pos.y});
-    if writeln!(state.stdin, "{cmd}").is_err() {
+    let cmd = Cmd::Down { x: pos.x, y: pos.y };
+    if writeln!(state.stdin, "{}", serde_json::to_string(&cmd).unwrap()).is_err() {
         return None;
     }
     if state.stdin.flush().is_err() {
@@ -213,11 +224,9 @@ fn try_touch_down(state: &mut EngineState, pos: POINT) -> Option<PointerId> {
 
     let mut line = String::new();
     state.stdout.read_line(&mut line).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&line).ok()?;
-    if v["type"] == "allocated" {
-        Some(PointerId(v["pointer_id"].as_u64()? as u32))
-    } else {
-        None
+    match serde_json::from_str::<WorkerResponse>(&line).ok()? {
+        WorkerResponse::Allocated { pointer_id } => Some(PointerId(pointer_id)),
+        _ => None,
     }
 }
 

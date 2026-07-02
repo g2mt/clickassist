@@ -24,25 +24,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     PT_TOUCH, TOUCH_FLAG_NONE, TOUCH_MASK_CONTACTAREA, TOUCH_MASK_ORIENTATION, TOUCH_MASK_PRESSURE,
 };
 
-// ---------------------------------------------------------------------------
-// Internal command (parsed from JSON on stdin)
-// ---------------------------------------------------------------------------
-
-enum WorkerCmd {
-    Down {
-        pos: POINT,
-    },
-    Up {
-        pointer_id: u32,
-        pos: POINT,
-    },
-    Move {
-        pointer_id: u32,
-        from: POINT,
-        to: POINT,
-    },
-    Shutdown,
-}
+use crate::touch::cmd::{Cmd, WorkerResponse};
 
 // ---------------------------------------------------------------------------
 // Per-contact state
@@ -86,7 +68,7 @@ pub fn run(max_contacts: u32) -> ! {
     let mut free_stack: Vec<u32> = (0..max_contacts).rev().collect();
 
     // Channel from reader thread → game loop.
-    let (tx, rx) = mpsc::channel::<WorkerCmd>();
+    let (tx, rx) = mpsc::channel::<Cmd>();
 
     // Spawn stdin reader thread.
     std::thread::Builder::new()
@@ -95,7 +77,7 @@ pub fn run(max_contacts: u32) -> ! {
         .expect("failed to spawn stdin reader");
 
     // Signal parent that we are ready.
-    println!(r#"{{"type":"ready"}}"#);
+    println!("{}", serde_json::to_string(&WorkerResponse::Ready).unwrap());
     let _ = std::io::stdout().flush();
 
     // Run game loop on main thread (never returns).
@@ -106,7 +88,7 @@ pub fn run(max_contacts: u32) -> ! {
 // Stdin reader
 // ---------------------------------------------------------------------------
 
-fn read_stdin(tx: Sender<WorkerCmd>) {
+fn read_stdin(tx: Sender<Cmd>) {
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let line = match line {
@@ -117,55 +99,16 @@ fn read_stdin(tx: Sender<WorkerCmd>) {
             }
         };
 
-        let cmd: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
+        let cmd: Cmd = match serde_json::from_str(&line) {
+            Ok(c) => c,
             Err(e) => {
                 eprintln!("[touch-worker] JSON parse error: {e}");
                 continue;
             }
         };
 
-        let worker_cmd = match cmd["cmd"].as_str() {
-            Some("down") => {
-                let x = cmd["x"].as_i64().unwrap_or(0) as i32;
-                let y = cmd["y"].as_i64().unwrap_or(0) as i32;
-                WorkerCmd::Down {
-                    pos: POINT { x, y },
-                }
-            }
-            Some("up") => {
-                let pointer_id = cmd["pointer_id"].as_u64().unwrap_or(0) as u32;
-                let x = cmd["x"].as_i64().unwrap_or(0) as i32;
-                let y = cmd["y"].as_i64().unwrap_or(0) as i32;
-                WorkerCmd::Up {
-                    pointer_id,
-                    pos: POINT { x, y },
-                }
-            }
-            Some("move") => {
-                let pointer_id = cmd["pointer_id"].as_u64().unwrap_or(0) as u32;
-                let from_x = cmd["from_x"].as_i64().unwrap_or(0) as i32;
-                let from_y = cmd["from_y"].as_i64().unwrap_or(0) as i32;
-                let to_x = cmd["to_x"].as_i64().unwrap_or(0) as i32;
-                let to_y = cmd["to_y"].as_i64().unwrap_or(0) as i32;
-                WorkerCmd::Move {
-                    pointer_id,
-                    from: POINT {
-                        x: from_x,
-                        y: from_y,
-                    },
-                    to: POINT { x: to_x, y: to_y },
-                }
-            }
-            Some("shutdown") => WorkerCmd::Shutdown,
-            other => {
-                eprintln!("[touch-worker] unknown command: {other:?}");
-                continue;
-            }
-        };
-
-        let is_shutdown = matches!(worker_cmd, WorkerCmd::Shutdown);
-        if tx.send(worker_cmd).is_err() {
+        let is_shutdown = matches!(cmd, Cmd::Shutdown);
+        if tx.send(cmd).is_err() {
             break;
         }
         if is_shutdown {
@@ -178,7 +121,7 @@ fn read_stdin(tx: Sender<WorkerCmd>) {
 // Game loop
 // ---------------------------------------------------------------------------
 
-fn run_game_loop(rx: Receiver<WorkerCmd>, free_stack: &mut Vec<u32>) -> ! {
+fn run_game_loop(rx: Receiver<Cmd>, free_stack: &mut Vec<u32>) -> ! {
     let mut contacts: Vec<Contact> = Vec::new();
     let mut infos: Vec<POINTER_TOUCH_INFO> = Vec::new();
     let mut shutting_down = false;
@@ -266,7 +209,7 @@ fn run_game_loop(rx: Receiver<WorkerCmd>, free_stack: &mut Vec<u32>) -> ! {
 // ---------------------------------------------------------------------------
 
 fn drain_commands(
-    rx: &Receiver<WorkerCmd>,
+    rx: &Receiver<Cmd>,
     contacts: &mut Vec<Contact>,
     free_stack: &mut Vec<u32>,
     already_shutting_down: bool,
@@ -275,7 +218,8 @@ fn drain_commands(
 
     loop {
         match rx.try_recv() {
-            Ok(WorkerCmd::Down { pos }) => {
+            Ok(Cmd::Down { x, y }) => {
+                let pos = POINT { x, y };
                 let id = match free_stack.pop() {
                     Some(id) => id,
                     None => {
@@ -284,7 +228,10 @@ fn drain_commands(
                     }
                 };
                 // Notify parent of allocated ID.
-                println!(r#"{{"type":"allocated","pointer_id":{id}}}"#);
+                println!(
+                    "{}",
+                    serde_json::to_string(&WorkerResponse::Allocated { pointer_id: id }).unwrap()
+                );
                 let _ = std::io::stdout().flush();
 
                 contacts.push(Contact {
@@ -296,7 +243,8 @@ fn drain_commands(
                 });
             }
 
-            Ok(WorkerCmd::Up { pointer_id, pos }) => {
+            Ok(Cmd::Up { pointer_id, x, y }) => {
+                let pos = POINT { x, y };
                 if let Some(c) = contacts.iter_mut().find(|c| c.pointer_id == pointer_id) {
                     c.pending_up = true;
                     c.pos = pos;
@@ -304,11 +252,18 @@ fn drain_commands(
                 }
             }
 
-            Ok(WorkerCmd::Move {
+            Ok(Cmd::Move {
                 pointer_id,
-                from,
-                to,
+                from_x,
+                from_y,
+                to_x,
+                to_y,
             }) => {
+                let from = POINT {
+                    x: from_x,
+                    y: from_y,
+                };
+                let to = POINT { x: to_x, y: to_y };
                 if let Some(c) = contacts.iter_mut().find(|c| c.pointer_id == pointer_id) {
                     if let Some(t) = c.transition.as_ref()
                         && t.to.x == to.x
@@ -325,7 +280,7 @@ fn drain_commands(
                 }
             }
 
-            Ok(WorkerCmd::Shutdown) => {
+            Ok(Cmd::Shutdown) => {
                 shutting_down = true;
                 for c in contacts.iter_mut() {
                     c.pending_up = true;
