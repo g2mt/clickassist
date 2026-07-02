@@ -310,6 +310,9 @@ fn drain_commands(
                 to,
             }) => {
                 if let Some(c) = contacts.iter_mut().find(|c| c.pointer_id == pointer_id) {
+                    if let Some(t)  =c.transition.as_ref() && t.to.x == to.x && t.to.y == to.y {
+                        continue;
+                    }
                     c.transition = Some(Transition {
                         start: Instant::now(),
                         duration: MOVE_DURATION,
