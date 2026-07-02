@@ -47,7 +47,7 @@ pub unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: L
         return unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) };
     }
 
-    let kbd: &windows_sys::Win32::UI::Input::KeyboardAndMouse::KBDLLHOOKSTRUCT =
+    let kbd: &windows_sys::Win32::UI::WindowsAndMessaging::KBDLLHOOKSTRUCT =
         unsafe { &*(lparam as *const _) };
     let vk_code: u32 = kbd.vkCode;
 

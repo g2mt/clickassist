@@ -2,8 +2,9 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows_sys::Win32::Foundation::{HWND, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
+use windows_sys::Win32::System::SystemServices::{SS_CENTER, SS_CENTERIMAGE};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::win;
@@ -47,15 +48,15 @@ pub fn show_instruction_tooltip(_anchor: HWND, text: &str) {
                 0,
                 0,
                 0,
-                FW_NORMAL,
+                FW_NORMAL as i32,
                 0,
                 0,
                 0,
-                DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,
-                CLIP_DEFAULT_PRECIS,
-                DEFAULT_QUALITY,
-                FF_DONTCARE,
+                DEFAULT_CHARSET as u32,
+                OUT_DEFAULT_PRECIS as u32,
+                CLIP_DEFAULT_PRECIS as u32,
+                DEFAULT_QUALITY as u32,
+                FF_DONTCARE as u32,
                 win::wide("Segoe UI").as_ptr(),
             );
             if hfont != std::ptr::null_mut() {
@@ -63,7 +64,7 @@ pub fn show_instruction_tooltip(_anchor: HWND, text: &str) {
             }
 
             // Position at the screen centre
-            let mut rect = std::mem::zeroed();
+            let mut rect: RECT = std::mem::zeroed();
             SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut rect as *mut _ as _, 0);
             let w = rect.right - rect.left;
             let h = rect.bottom - rect.top;

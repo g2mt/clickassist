@@ -42,9 +42,7 @@ pub fn create_toolbar(parent: HWND, _hinstance: HINSTANCE) -> Vec<HWND> {
         };
 
         if hwnd != std::ptr::null_mut() {
-            unsafe {
-                set_button_font(hwnd);
-            }
+            set_button_font(hwnd);
             hwnds.push(hwnd);
         }
     }
@@ -60,15 +58,15 @@ fn set_button_font(hwnd: HWND) {
             0,         // width (auto from height)
             0,         // escapement
             0,         // orientation
-            FW_NORMAL, // weight
+            FW_NORMAL as i32, // weight
             0,         // italic
             0,         // underline
             0,         // strikeout
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY,
-            FF_DONTCARE,
+            DEFAULT_CHARSET as u32,
+            OUT_DEFAULT_PRECIS as u32,
+            CLIP_DEFAULT_PRECIS as u32,
+            DEFAULT_QUALITY as u32,
+            FF_DONTCARE as u32,
             win::wide("Segoe UI").as_ptr(),
         );
         if hfont != std::ptr::null_mut() {

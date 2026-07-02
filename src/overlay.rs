@@ -58,7 +58,7 @@ pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
 
     if hwnd != std::ptr::null_mut() {
         unsafe {
-            SetLayeredWindowAttributes(hwnd, COLOR_WINDOW + 1, 0, LWA_COLORKEY);
+            SetLayeredWindowAttributes(hwnd, (COLOR_WINDOW + 1) as u32, 0, LWA_COLORKEY);
         }
     }
 
@@ -106,7 +106,7 @@ pub unsafe extern "system" fn overlay_proc(
         WM_ERASEBKGND => {
             unsafe {
                 let hdc = wparam as HDC;
-                let brush = CreateSolidBrush(COLOR_WINDOW + 1);
+                let brush = CreateSolidBrush((COLOR_WINDOW + 1) as u32);
                 let mut rect = RECT {
                     left: 0,
                     top: 0,

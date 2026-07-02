@@ -1,6 +1,7 @@
 //! Main window creation and `WndProc` message routing.
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::COLOR_WINDOW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::{toolbar, tray, win};
@@ -65,27 +66,23 @@ pub unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     match msg {
         WM_CREATE => {
-            unsafe {
-                let _tb = toolbar::create_toolbar(hwnd, std::ptr::null_mut());
-            }
+            let _tb = toolbar::create_toolbar(hwnd, std::ptr::null_mut());
             0
         }
 
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as u16;
-            unsafe {
-                match id {
-                    toolbar::ID_RECORD => {
-                        post_app_command(hwnd, toolbar::ID_RECORD);
-                    }
-                    toolbar::ID_SHOW_POSITIONS => {
-                        post_app_command(hwnd, toolbar::ID_SHOW_POSITIONS);
-                    }
-                    toolbar::ID_START => {
-                        post_app_command(hwnd, toolbar::ID_START);
-                    }
-                    _ => {}
+            match id {
+                toolbar::ID_RECORD => {
+                    post_app_command(hwnd, toolbar::ID_RECORD);
                 }
+                toolbar::ID_SHOW_POSITIONS => {
+                    post_app_command(hwnd, toolbar::ID_SHOW_POSITIONS);
+                }
+                toolbar::ID_START => {
+                    post_app_command(hwnd, toolbar::ID_START);
+                }
+                _ => {}
             }
             0
         }
