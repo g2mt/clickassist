@@ -227,7 +227,6 @@ impl AppState {
         unsafe {
             ShowWindow(self.main_hwnd, SW_HIDE);
         }
-
     }
 
     // ---------- Stop ----------
@@ -272,7 +271,7 @@ impl AppState {
                     self.active.insert(vk, pid);
                 }
             }
-        } else {
+        } else if !self.active.contains_key(&vk) {
             // Simple touch press
             if let Some(pid) = touch::touch_down(pos) {
                 self.active.insert(vk, pid);
@@ -281,6 +280,10 @@ impl AppState {
     }
 
     fn release_touch(&mut self, vk: u32) {
+        eprintln!(
+            "key up: {vk}, gesture_anchor: {:?}, ctrl: {}",
+            self.gesture_anchor, self.ctrl_down
+        );
         if let Some(pid) = self.active.remove(&vk) {
             let pos = self.bindings[&vk];
             touch::touch_up(pid, pos);
