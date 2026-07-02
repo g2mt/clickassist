@@ -13,15 +13,6 @@ pub struct Binding {
     pub y: i32,
 }
 
-impl Binding {
-    pub fn point(&self) -> POINT {
-        POINT {
-            x: self.x,
-            y: self.y,
-        }
-    }
-}
-
 /// Convert a Windows virtual-key code to a human-readable label.
 ///
 /// Handles common cases: `A`–`Z`, `0`–`9`, `F1`–`F24`, and a handful of

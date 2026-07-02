@@ -79,6 +79,7 @@ fn main() {
     let exit_code = run_message_loop();
 
     // ---------- Cleanup ----------
+    touch::deinit_touch_injection();
     hook::uninstall_keyboard_hook(_hook);
     tray::remove_tray_icon(&tray_data);
     unsafe {

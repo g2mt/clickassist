@@ -103,11 +103,11 @@ impl AppState {
             constants::ID_START => self.enter_started(),
             constants::ID_STOP => self.stop(), // tray "Stop"
             constants::ID_QUIT => {
-                // Post quit message to exit the message loop
                 unsafe {
                     PostQuitMessage(0);
                 }
             }
+            constants::ID_RESET => self.reset_bindings(),
             _ => {}
         }
     }
@@ -208,6 +208,27 @@ impl AppState {
         if self.overlay_visible {
             overlay::show_overlay(self.overlay_hwnd, &self.bindings);
         } else {
+            overlay::hide_overlay(self.overlay_hwnd);
+        }
+    }
+
+    // ---------- Reset bindings ----------
+
+    fn reset_bindings(&mut self) {
+        // Release all active touches
+        for vk in self.active.keys().copied().collect::<Vec<_>>() {
+            self.release_touch(vk);
+        }
+        self.active.clear();
+        self.gesture_anchor = None;
+        self.bindings.clear();
+
+        // Persist empty config
+        let _ = config::save(&config::Config { bindings: vec![] });
+
+        // Hide overlay if visible
+        if self.overlay_visible {
+            self.overlay_visible = false;
             overlay::hide_overlay(self.overlay_hwnd);
         }
     }

@@ -6,7 +6,6 @@
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
-use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
@@ -23,7 +22,3 @@ pub fn set_dpi_awareness() {
     }
 }
 
-/// Return the calling thread's last-error code via `GetLastError()`.
-pub fn last_error() -> u32 {
-    unsafe { GetLastError() }
-}

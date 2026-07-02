@@ -3,6 +3,7 @@ pub const ID_SHOW_POSITIONS: u16 = 102;
 pub const ID_START: u16 = 103;
 pub const ID_STOP: u16 = 104;
 pub const ID_QUIT: u16 = 105;
+pub const ID_RESET: u16 = 106;
 
 // Tray context-menu item IDs
 pub const ID_TRAY_SHOW: u16 = 201;
