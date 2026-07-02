@@ -233,7 +233,7 @@ impl AppState {
         unsafe {
             ShowWindow(self.main_hwnd, SW_HIDE);
         }
-        self.next_pointer_id = 1;
+        self.next_pointer_id = 0;
     }
 
     // ---------- Stop ----------
@@ -289,7 +289,6 @@ impl AppState {
         } else {
             // Simple touch press
             let pid = self.allocate_pointer_id();
-            touch::touch_down(pid, pos);
             if self
                 .active
                 .insert(
@@ -320,10 +319,7 @@ impl AppState {
 
     fn allocate_pointer_id(&mut self) -> u32 {
         let id = self.next_pointer_id;
-        self.next_pointer_id = self.next_pointer_id.wrapping_add(1);
-        if self.next_pointer_id == 0 {
-            self.next_pointer_id = 1;
-        }
+        self.next_pointer_id += 1;
         id
     }
 }
