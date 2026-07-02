@@ -11,7 +11,6 @@ mod bindings;
 mod config;
 mod hook;
 mod overlay;
-mod toolbar;
 mod tooltip;
 mod touch;
 mod tray;
@@ -22,6 +21,9 @@ use std::collections::HashMap;
 use std::mem;
 
 use windows_sys::Win32::Foundation::{HINSTANCE, POINT};
+use windows_sys::Win32::Graphics::Gdi::{
+    RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -60,6 +62,14 @@ fn main() {
     // ---------- Show the main window ----------
     unsafe {
         ShowWindow(main_hwnd, SW_SHOW);
+        // Force child buttons to paint immediately; without RDW_ALLCHILDREN
+        // they don't appear until the window is moved/resized.
+        RedrawWindow(
+            main_hwnd,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+        );
     }
 
     // ---------- Install keyboard hook ----------
@@ -101,11 +111,9 @@ fn run_message_loop() -> i32 {
                 // Handle toolbar and tray menu commands after dispatch
                 if msg.message == WM_COMMAND {
                     let id = (msg.wParam & 0xFFFF) as u16;
-                    if (101..=104).contains(&id) {
-                        app::STATE.with(|s| {
-                            s.borrow_mut().on_toolbar_command(id);
-                        });
-                    }
+                    app::STATE.with(|s| {
+                        s.borrow_mut().on_toolbar_command(id);
+                    });
                 }
             }
         }

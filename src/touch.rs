@@ -16,27 +16,27 @@ const MAX_TOUCHES: u32 = 10;
 
 /// Initialise the touch injection system. Call once at startup.
 pub fn init_touch_injection() {
-    todo!("touch injection initialisation (InitializeTouchInjection)")
+    eprintln!("touch injection initialisation (InitializeTouchInjection)")
 }
 
 /// Build a `POINTER_TOUCH_INFO` for a given pointer ID, position, and flags.
 pub fn make_touch_info(_pointer_id: u32, _pos: POINT, _flags: POINTER_FLAGS) {
-    todo!("touch injection: make_touch_info")
+    eprintln!("touch injection: make_touch_info")
 }
 
 /// Inject a touch-down at the given position.
 pub fn touch_down(_pointer_id: u32, _pos: POINT) {
-    todo!("touch injection: touch_down")
+    eprintln!("touch injection: touch_down")
 }
 
 /// Inject a touch-up at the given position.
 pub fn touch_up(_pointer_id: u32, _pos: POINT) {
-    todo!("touch injection: touch_up")
+    eprintln!("touch injection: touch_up")
 }
 
 /// Inject a touch-move gesture from `from` to `to` with the given number of
 /// interpolation steps. A small sleep between steps makes the gesture look
 /// natural to the target application's gesture recogniser.
 pub fn touch_move(_pointer_id: u32, _from: POINT, _to: POINT, _steps: u32) {
-    todo!("touch injection: touch_move")
+    eprintln!("touch injection: touch_move")
 }

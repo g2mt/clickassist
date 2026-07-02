@@ -11,6 +11,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::{bindings, config, overlay, tooltip, touch};
 
+pub mod constants;
+
 // ---------------------------------------------------------------------------
 // Mode
 // ---------------------------------------------------------------------------
@@ -96,10 +98,10 @@ impl AppState {
     /// Handle a toolbar button command (Record / Show Positions / Start / Stop).
     pub fn on_toolbar_command(&mut self, id: u16) {
         match id {
-            crate::toolbar::ID_RECORD => self.enter_recording(),
-            crate::toolbar::ID_SHOW_POSITIONS => self.toggle_overlay(),
-            crate::toolbar::ID_START => self.enter_started(),
-            104 => self.stop(), // tray "Stop"
+            constants::ID_RECORD => self.enter_recording(),
+            constants::ID_SHOW_POSITIONS => self.toggle_overlay(),
+            constants::ID_START => self.enter_started(),
+            constants::ID_STOP => self.stop(), // tray "Stop"
             _ => {}
         }
     }
