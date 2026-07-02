@@ -14,7 +14,7 @@ mod overlay;
 mod tooltip;
 mod touch;
 mod tray;
-mod win;
+mod utils;
 mod window;
 
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ fn main() {
     }
 
     // ---------- DPI awareness ----------
-    win::set_dpi_awareness();
+    utils::set_dpi_awareness();
 
     // ---------- Load config ----------
     let cfg = config::load();

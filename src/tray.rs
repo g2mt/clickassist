@@ -6,7 +6,7 @@ use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::app::constants;
-use crate::win;
+use crate::utils;
 use crate::window::WM_TRAY;
 
 /// Add the ClickAssist icon to the notification area.
@@ -22,7 +22,7 @@ pub fn add_tray_icon(hwnd: HWND) -> Box<NOTIFYICONDATAW> {
     // Use the default application icon
     nid.hIcon = unsafe { LoadIconW(std::ptr::null_mut(), IDI_APPLICATION) };
 
-    let tip = win::wide("ClickAssist");
+    let tip = utils::wide("ClickAssist");
     let tip_len = tip.len().min(127);
     nid.szTip[..tip_len].copy_from_slice(&tip[..tip_len]);
 
@@ -68,20 +68,20 @@ pub fn show_tray_menu(hwnd: HWND) {
             menu,
             MF_STRING,
             constants::ID_TRAY_SHOW as _,
-            win::wide("Show").as_ptr(),
+            utils::wide("Show").as_ptr(),
         );
         AppendMenuW(
             menu,
             MF_STRING,
             constants::ID_TRAY_STOP as _,
-            win::wide("Stop").as_ptr(),
+            utils::wide("Stop").as_ptr(),
         );
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
         AppendMenuW(
             menu,
             MF_STRING,
             constants::ID_TRAY_EXIT as _,
-            win::wide("Exit").as_ptr(),
+            utils::wide("Exit").as_ptr(),
         );
 
         SetForegroundWindow(hwnd);

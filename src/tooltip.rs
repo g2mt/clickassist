@@ -7,7 +7,7 @@ use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::SystemServices::{SS_CENTER, SS_CENTERIMAGE};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::win;
+use crate::utils;
 
 static VISIBLE: AtomicBool = AtomicBool::new(false);
 
@@ -20,8 +20,8 @@ pub fn show_instruction_tooltip(_anchor: HWND, text: &str) {
         return; // already shown
     }
 
-    let class = win::wide("STATIC");
-    let wtext = win::wide(text);
+    let class = utils::wide("STATIC");
+    let wtext = utils::wide(text);
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -57,7 +57,7 @@ pub fn show_instruction_tooltip(_anchor: HWND, text: &str) {
                 CLIP_DEFAULT_PRECIS as u32,
                 DEFAULT_QUALITY as u32,
                 FF_DONTCARE as u32,
-                win::wide("Segoe UI").as_ptr(),
+                utils::wide("Segoe UI").as_ptr(),
             );
             if hfont != std::ptr::null_mut() {
                 SendMessageW(hwnd, WM_SETFONT, hfont as WPARAM, 1);

@@ -5,7 +5,7 @@ use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::app::STATE;
-use crate::{tray, win};
+use crate::{tray, utils};
 
 pub const WM_TRAY: u32 = WM_APP + 1;
 
@@ -22,8 +22,8 @@ const WINDOW_HEIGHT: i32 = 100;
 
 /// Register the window class and create the main window.
 pub fn create_main_window(hinstance: HINSTANCE) -> HWND {
-    let class_name = win::wide(CLASS_NAME);
-    let window_title = win::wide("ClickAssist");
+    let class_name = utils::wide(CLASS_NAME);
+    let window_title = utils::wide("ClickAssist");
 
     // ---------- Register the window class ----------
     let wc = WNDCLASSW {
@@ -76,10 +76,10 @@ fn create_buttons(parent: HWND) {
         (crate::app::constants::ID_QUIT, "Quit"),
     ];
 
-    let btn_class = win::wide("BUTTON");
+    let btn_class = utils::wide("BUTTON");
 
     for (i, (id, label)) in buttons.iter().enumerate() {
-        let btn_text = win::wide(label);
+        let btn_text = utils::wide(label);
         let x = BTN_MARGIN + i as i32 * (BTN_WIDTH + BTN_MARGIN);
 
         let hwnd = unsafe {
@@ -123,7 +123,7 @@ fn set_button_font(hwnd: HWND) {
             CLIP_DEFAULT_PRECIS as u32,
             DEFAULT_QUALITY as u32,
             FF_DONTCARE as u32,
-            win::wide("Segoe UI").as_ptr(),
+            utils::wide("Segoe UI").as_ptr(),
         );
         if hfont != std::ptr::null_mut() {
             SendMessageW(hwnd, WM_SETFONT, hfont as WPARAM, 1); // 1 = redraw

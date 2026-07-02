@@ -1,7 +1,4 @@
 //! Thin Win32 helpers: wide strings, DPI awareness, error checking.
-//!
-//! Since `windows-sys` exposes raw FFI without `windows::core::Result` wrappers,
-//! this module centralises `GetLastError`-based error checking.
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;

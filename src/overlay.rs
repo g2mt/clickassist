@@ -7,7 +7,7 @@ use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RE
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::{bindings, win};
+use crate::{bindings, utils};
 
 const OVERLAY_CLASS: &str = "ClickAssistOverlay";
 const DOT_RADIUS: i32 = 6;
@@ -16,7 +16,7 @@ const LABEL_GAP: i32 = 4;
 /// Create the overlay window (initially hidden).
 pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
     unsafe {
-        let class_name = win::wide(OVERLAY_CLASS);
+        let class_name = utils::wide(OVERLAY_CLASS);
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             style: CS_HREDRAW | CS_VREDRAW,
@@ -42,7 +42,7 @@ pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
     let hwnd = unsafe {
         CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-            win::wide(OVERLAY_CLASS).as_ptr(),
+            utils::wide(OVERLAY_CLASS).as_ptr(),
             std::ptr::null(),
             WS_POPUP,
             x,
@@ -171,7 +171,7 @@ fn draw_dot(hdc: HDC, cx: i32, cy: i32) {
 
 /// Draw a text label centred horizontally with its top at (cx, top_y).
 fn draw_centered_label(hdc: HDC, cx: i32, top_y: i32, label: &str) {
-    let wide_label = win::wide(label);
+    let wide_label = utils::wide(label);
     let len = wide_label.len() - 1; // exclude null terminator
 
     unsafe {
