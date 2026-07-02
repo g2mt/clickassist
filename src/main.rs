@@ -28,6 +28,11 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 fn main() {
+    // If invoked with --touch-worker, run the touch-injection child process.
+    if std::env::args().any(|a| a == "--touch-worker") {
+        touch::run_worker();
+    }
+
     // ---------- DPI awareness ----------
     win::set_dpi_awareness();
 

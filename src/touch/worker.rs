@@ -1,22 +1,17 @@
-//! Touch injection engine: press, release, multi-touch, interpolated gesture
-//! moves.
+//! Touch-injection worker process.
 //!
-//! Uses `InitializeTouchInjection` + `InjectTouchInput` (Windows 8+).
+//! This module runs in a **child process** spawned by [`super::init_touch_injection`]
+//! so that the per-process internal touch state is isolated from the main
+//! application.
 //!
-//! A dedicated background thread runs a fixed-timestep game loop at ~60 Hz.
-//! Every frame:
-//!
-//! 1. Drain the command channel (non-blocking).
-//! 2. Advance move interpolations.
-//! 3. Compute `POINTER_FLAG_*` for each contact via a state machine that
-//!    guarantees a `UPDATE` frame between `DOWN` and `UP` so
-//!    `ERROR_INVALID_PARAMETER` never occurs.
-//! 4. Call `InjectTouchInput` **once**.
-//! 5. Increment frame counters; contacts that emitted `UP` are removed.
-//! 6. Sleep until the next frame boundary.
+//! A reader thread parses JSON commands from **stdin** and pushes them onto a
+//! channel.  The main thread runs a fixed-timestep game loop at ~60 Hz that
+//! drains the channel, drives contact state machines, and calls
+//! `InjectTouchInput`.  Responses (pointer-ID allocations) are written to
+//! **stdout** as JSON.
 
+use std::io::{BufRead, Write};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{GetLastError, POINT, RECT};
@@ -30,44 +25,23 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 // ---------------------------------------------------------------------------
-// Commands
+// Internal command (parsed from JSON on stdin)
 // ---------------------------------------------------------------------------
 
-enum TouchCommand {
-    Down { pointer_id: u32, pos: POINT },
-    Up { pointer_id: u32, pos: POINT },
-    Move { pointer_id: u32, from: POINT, to: POINT },
+enum WorkerCmd {
+    Down {
+        pos: POINT,
+    },
+    Up {
+        pointer_id: u32,
+        pos: POINT,
+    },
+    Move {
+        pointer_id: u32,
+        from: POINT,
+        to: POINT,
+    },
     Shutdown,
-}
-
-impl std::fmt::Debug for TouchCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Down { pointer_id, pos } => f
-                .debug_struct("Down")
-                .field("pointer_id", pointer_id)
-                .field("pos.x", &pos.x)
-                .field("pos.y", &pos.y)
-                .finish(),
-            Self::Up { pointer_id, pos } => f
-                .debug_struct("Up")
-                .field("pointer_id", pointer_id)
-                .field("pos.x", &pos.x)
-                .field("pos.y", &pos.y)
-                .finish(),
-            Self::Move {
-                pointer_id, from, to,
-            } => f
-                .debug_struct("Move")
-                .field("pointer_id", pointer_id)
-                .field("from.x", &from.x)
-                .field("from.y", &from.y)
-                .field("to.x", &to.x)
-                .field("to.y", &to.y)
-                .finish(),
-            Self::Shutdown => f.debug_struct("Shutdown").finish(),
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -90,90 +64,113 @@ struct Transition {
     to: POINT,
 }
 
-impl std::fmt::Debug for Transition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Transition")
-            .field("elapsed", &self.start.elapsed().as_secs_f64())
-            .field("duration", &self.duration.as_secs_f64())
-            .field("from.x", &self.from.x)
-            .field("from.y", &self.from.y)
-            .field("to.x", &self.to.x)
-            .field("to.y", &self.to.y)
-            .finish()
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Singleton
+// Constants
 // ---------------------------------------------------------------------------
-
-struct EngineState {
-    sender: Sender<TouchCommand>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-
-static ENGINE: Mutex<Option<EngineState>> = Mutex::new(None);
 
 const FRAME_DURATION: Duration = Duration::from_nanos(16_666_667);
 const MOVE_DURATION: Duration = Duration::from_secs(1);
 
 // ---------------------------------------------------------------------------
-// Public API
+// Entry point
 // ---------------------------------------------------------------------------
 
-pub fn init_touch_injection(max_contacts: u32) {
-    let (tx, rx) = mpsc::channel::<TouchCommand>();
+pub fn run(max_contacts: u32) -> ! {
+    let ok = unsafe { InitializeTouchInjection(max_contacts, TOUCH_FEEDBACK_DEFAULT) };
+    if ok == 0 {
+        // Best-effort; we still run the loop so the parent doesn't hang.
+        eprintln!("[touch-worker] InitializeTouchInjection failed");
+    }
 
-    let handle = std::thread::Builder::new()
-        .name("touch-inject".into())
-        .spawn(move || {
-            let ok = unsafe { InitializeTouchInjection(max_contacts, TOUCH_FEEDBACK_DEFAULT) };
-            if ok == 0 {
-                eprintln!("[touch] InitializeTouchInjection failed");
+    // Free stack: push IDs in reverse so we pop small numbers first.
+    let mut free_stack: Vec<u32> = (0..max_contacts).rev().collect();
+
+    // Channel from reader thread → game loop.
+    let (tx, rx) = mpsc::channel::<WorkerCmd>();
+
+    // Spawn stdin reader thread.
+    std::thread::Builder::new()
+        .name("touch-worker-stdin".into())
+        .spawn(move || read_stdin(tx))
+        .expect("failed to spawn stdin reader");
+
+    // Signal parent that we are ready.
+    println!(r#"{{"type":"ready"}}"#);
+    let _ = std::io::stdout().flush();
+
+    // Run game loop on main thread (never returns).
+    run_game_loop(rx, &mut free_stack);
+}
+
+// ---------------------------------------------------------------------------
+// Stdin reader
+// ---------------------------------------------------------------------------
+
+fn read_stdin(tx: Sender<WorkerCmd>) {
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("[touch-worker] stdin error: {e}");
+                break;
             }
-            run_game_loop(rx);
-        })
-        .expect("failed to spawn touch injection thread");
+        };
 
-    let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
-    *guard = Some(EngineState {
-        sender: tx,
-        thread: Some(handle),
-    });
-}
+        let cmd: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[touch-worker] JSON parse error: {e}");
+                continue;
+            }
+        };
 
-pub fn deinit_touch_injection() {
-    let mut guard = ENGINE.lock().expect("ENGINE lock poisoned");
-    if let Some(mut state) = guard.take() {
-        let _ = state.sender.send(TouchCommand::Shutdown);
-        if let Some(handle) = state.thread.take() {
-            let _ = handle.join();
+        let worker_cmd = match cmd["cmd"].as_str() {
+            Some("down") => {
+                let x = cmd["x"].as_i64().unwrap_or(0) as i32;
+                let y = cmd["y"].as_i64().unwrap_or(0) as i32;
+                WorkerCmd::Down {
+                    pos: POINT { x, y },
+                }
+            }
+            Some("up") => {
+                let pointer_id = cmd["pointer_id"].as_u64().unwrap_or(0) as u32;
+                let x = cmd["x"].as_i64().unwrap_or(0) as i32;
+                let y = cmd["y"].as_i64().unwrap_or(0) as i32;
+                WorkerCmd::Up {
+                    pointer_id,
+                    pos: POINT { x, y },
+                }
+            }
+            Some("move") => {
+                let pointer_id = cmd["pointer_id"].as_u64().unwrap_or(0) as u32;
+                let from_x = cmd["from_x"].as_i64().unwrap_or(0) as i32;
+                let from_y = cmd["from_y"].as_i64().unwrap_or(0) as i32;
+                let to_x = cmd["to_x"].as_i64().unwrap_or(0) as i32;
+                let to_y = cmd["to_y"].as_i64().unwrap_or(0) as i32;
+                WorkerCmd::Move {
+                    pointer_id,
+                    from: POINT {
+                        x: from_x,
+                        y: from_y,
+                    },
+                    to: POINT { x: to_x, y: to_y },
+                }
+            }
+            Some("shutdown") => WorkerCmd::Shutdown,
+            other => {
+                eprintln!("[touch-worker] unknown command: {other:?}");
+                continue;
+            }
+        };
+
+        let is_shutdown = matches!(worker_cmd, WorkerCmd::Shutdown);
+        if tx.send(worker_cmd).is_err() {
+            break;
         }
-    }
-}
-
-pub fn touch_down(pointer_id: u32, pos: POINT) {
-    let guard = ENGINE.lock().expect("ENGINE lock poisoned");
-    if let Some(ref state) = *guard {
-        let _ = state.sender.send(TouchCommand::Down { pointer_id, pos });
-    }
-}
-
-pub fn touch_up(pointer_id: u32, pos: POINT) {
-    let guard = ENGINE.lock().expect("ENGINE lock poisoned");
-    if let Some(ref state) = *guard {
-        let _ = state.sender.send(TouchCommand::Up { pointer_id, pos });
-    }
-}
-
-pub fn touch_move(pointer_id: u32, from: POINT, to: POINT) {
-    let guard = ENGINE.lock().expect("ENGINE lock poisoned");
-    if let Some(ref state) = *guard {
-        let _ = state.sender.send(TouchCommand::Move {
-            pointer_id,
-            from,
-            to,
-        });
+        if is_shutdown {
+            break;
+        }
     }
 }
 
@@ -181,7 +178,7 @@ pub fn touch_move(pointer_id: u32, from: POINT, to: POINT) {
 // Game loop
 // ---------------------------------------------------------------------------
 
-fn run_game_loop(rx: Receiver<TouchCommand>) {
+fn run_game_loop(rx: Receiver<WorkerCmd>, free_stack: &mut Vec<u32>) -> ! {
     let mut contacts: Vec<Contact> = Vec::new();
     let mut infos: Vec<POINTER_TOUCH_INFO> = Vec::new();
     let mut shutting_down = false;
@@ -191,7 +188,7 @@ fn run_game_loop(rx: Receiver<TouchCommand>) {
 
         // -- 1. Drain commands ------------------------------------------
 
-        shutting_down |= drain_commands(&rx, &mut contacts, shutting_down);
+        shutting_down |= drain_commands(&rx, &mut contacts, free_stack, shutting_down);
 
         // -- 2. Advance interpolations ----------------------------------
 
@@ -228,7 +225,11 @@ fn run_game_loop(rx: Receiver<TouchCommand>) {
         if !infos.is_empty() {
             unsafe {
                 if InjectTouchInput(infos.len() as u32, infos.as_ptr()) == 0 {
-                    eprintln!("[touch] InjectTouchInput failed: error={}", GetLastError());
+                    eprintln!(
+                        "[touch-worker] InjectTouchInput failed: error={}",
+                        GetLastError()
+                    );
+                    std::process::exit(1);
                 }
             }
         }
@@ -239,15 +240,16 @@ fn run_game_loop(rx: Receiver<TouchCommand>) {
             contact.frames_emitted += 1;
         }
 
-        // Remove in reverse to preserve indices.
+        // Remove in reverse to preserve indices; return IDs to free stack.
         for &idx in removal_indices.iter().rev() {
+            free_stack.push(contacts[idx].pointer_id);
             contacts.remove(idx);
         }
 
         // -- 6. Exit check -----------------------------------------------
 
         if shutting_down && contacts.is_empty() {
-            break;
+            std::process::exit(0);
         }
 
         // -- 7. Sleep to next frame --------------------------------------
@@ -264,20 +266,29 @@ fn run_game_loop(rx: Receiver<TouchCommand>) {
 // ---------------------------------------------------------------------------
 
 fn drain_commands(
-    rx: &Receiver<TouchCommand>,
+    rx: &Receiver<WorkerCmd>,
     contacts: &mut Vec<Contact>,
+    free_stack: &mut Vec<u32>,
     already_shutting_down: bool,
 ) -> bool {
     let mut shutting_down = already_shutting_down;
 
     loop {
         match rx.try_recv() {
-            Ok(TouchCommand::Down { pointer_id, pos }) => {
-                if contacts.iter().any(|c| c.pointer_id == pointer_id) {
-                    continue;
-                }
+            Ok(WorkerCmd::Down { pos }) => {
+                let id = match free_stack.pop() {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("[touch-worker] no free pointer IDs");
+                        continue;
+                    }
+                };
+                // Notify parent of allocated ID.
+                println!(r#"{{"type":"allocated","pointer_id":{id}}}"#);
+                let _ = std::io::stdout().flush();
+
                 contacts.push(Contact {
-                    pointer_id,
+                    pointer_id: id,
                     pos,
                     frames_emitted: 0,
                     pending_up: false,
@@ -285,7 +296,7 @@ fn drain_commands(
                 });
             }
 
-            Ok(TouchCommand::Up { pointer_id, pos }) => {
+            Ok(WorkerCmd::Up { pointer_id, pos }) => {
                 if let Some(c) = contacts.iter_mut().find(|c| c.pointer_id == pointer_id) {
                     c.pending_up = true;
                     c.pos = pos;
@@ -293,7 +304,7 @@ fn drain_commands(
                 }
             }
 
-            Ok(TouchCommand::Move {
+            Ok(WorkerCmd::Move {
                 pointer_id,
                 from,
                 to,
@@ -308,7 +319,7 @@ fn drain_commands(
                 }
             }
 
-            Ok(TouchCommand::Shutdown) => {
+            Ok(WorkerCmd::Shutdown) => {
                 shutting_down = true;
                 for c in contacts.iter_mut() {
                     c.pending_up = true;
@@ -334,10 +345,10 @@ fn drain_commands(
 
 /// | `frames_emitted` | `pending_up` | Flags                                    |
 /// |------------------|-------------|------------------------------------------|
-/// | 0                | —           | `INRANGE | INCONTACT | DOWN`            |
-/// | ≥ 1              | false       | `INRANGE | INCONTACT | UPDATE`          |
-/// | 1                | true        | `INRANGE | INCONTACT | UPDATE` (pre-up) |
-/// | ≥ 2              | true        | `INRANGE | UP`                          |
+/// | 0                | —           | `INRANGE \| INCONTACT \| DOWN`            |
+/// | ≥ 1              | false       | `INRANGE \| INCONTACT \| UPDATE`          |
+/// | 1                | true        | `INRANGE \| INCONTACT \| UPDATE` (pre-up) |
+/// | ≥ 2              | true        | `INRANGE \| UP`                          |
 fn contact_flags(contact: &Contact) -> POINTER_FLAGS {
     if contact.frames_emitted == 0 {
         POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN

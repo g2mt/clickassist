@@ -34,8 +34,7 @@ pub enum Mode {
 pub struct AppState {
     pub mode: Mode,
     pub bindings: HashMap<u32, POINT>,
-    pub active: HashMap<u32, u32>,
-    pub next_pointer_id: u32,
+    pub active: HashMap<u32, touch::PointerId>,
     pub ctrl_down: bool,
     pub gesture_anchor: Option<u32>,
     pub overlay_visible: bool,
@@ -49,7 +48,6 @@ impl Default for AppState {
             mode: Mode::Idle,
             bindings: HashMap::new(),
             active: HashMap::new(),
-            next_pointer_id: 1,
             ctrl_down: false,
             gesture_anchor: None,
             overlay_visible: false,
@@ -229,7 +227,7 @@ impl AppState {
         unsafe {
             ShowWindow(self.main_hwnd, SW_HIDE);
         }
-        self.next_pointer_id = 0;
+
     }
 
     // ---------- Stop ----------
@@ -262,24 +260,22 @@ impl AppState {
                     return;
                 }
                 // Gesture move: drag anchor to this key's position
-                if let Some(&pointer_id) = self.active.get(&anchor_vk) {
+                if let Some(pid) = self.active.get(&anchor_vk) {
                     let from = self.bindings[&anchor_vk];
                     // Inject interpolated move
-                    touch::touch_move(pointer_id, from, pos);
+                    touch::touch_move(pid, from, pos);
                 }
             } else {
                 // First key while Ctrl held = gesture anchor
                 self.gesture_anchor = Some(vk);
-                let pid = self.allocate_pointer_id();
-                if self.active.insert(vk, pid).is_none() {
-                    touch::touch_down(pid, pos);
+                if let Some(pid) = touch::touch_down(pos) {
+                    self.active.insert(vk, pid);
                 }
             }
         } else {
             // Simple touch press
-            let pid = self.allocate_pointer_id();
-            if self.active.insert(vk, pid).is_none() {
-                touch::touch_down(pid, pos);
+            if let Some(pid) = touch::touch_down(pos) {
+                self.active.insert(vk, pid);
             }
         }
     }
@@ -295,11 +291,5 @@ impl AppState {
         if let Some(anchor_vk) = self.gesture_anchor.take() {
             self.release_touch(anchor_vk);
         }
-    }
-
-    fn allocate_pointer_id(&mut self) -> u32 {
-        let id = self.next_pointer_id;
-        self.next_pointer_id += 1;
-        id
     }
 }
