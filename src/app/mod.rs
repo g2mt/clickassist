@@ -102,6 +102,12 @@ impl AppState {
             constants::ID_SHOW_POSITIONS => self.toggle_overlay(),
             constants::ID_START => self.enter_started(),
             constants::ID_STOP => self.stop(), // tray "Stop"
+            constants::ID_QUIT => {
+                // Post quit message to exit the message loop
+                unsafe {
+                    PostQuitMessage(0);
+                }
+            }
             _ => {}
         }
     }

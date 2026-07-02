@@ -12,14 +12,14 @@ pub const WM_KEY_EVENT: u32 = WM_APP + 2;
 
 const CLASS_NAME: &str = "ClickAssistMain";
 
-/// Client-area width/height of the main window.
-const WINDOW_WIDTH: i32 = 420;
-const WINDOW_HEIGHT: i32 = 120;
-
 /// Toolbar button layout.
 const BTN_WIDTH: i32 = 120;
 const BTN_HEIGHT: i32 = 32;
 const BTN_MARGIN: i32 = 12;
+
+/// Client-area width/height of the main window.
+const WINDOW_WIDTH: i32 = (BTN_WIDTH + BTN_HEIGHT) * 4;
+const WINDOW_HEIGHT: i32 = 100;
 
 /// Register the window class and create the main window.
 pub fn create_main_window(hinstance: HINSTANCE) -> HWND {
@@ -70,6 +70,7 @@ pub fn create_main_window(hinstance: HINSTANCE) -> HWND {
 /// child `BUTTON` controls laid out in a row.
 fn create_buttons(parent: HWND) {
     let buttons = [
+        (crate::app::constants::ID_QUIT, "Quit"),
         (crate::app::constants::ID_RECORD, "Record"),
         (crate::app::constants::ID_SHOW_POSITIONS, "Show Positions"),
         (crate::app::constants::ID_START, "Start"),

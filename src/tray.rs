@@ -4,6 +4,7 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+use crate::app::constants;
 use crate::win;
 use crate::window::WM_TRAY;
 
@@ -62,10 +63,25 @@ pub fn show_tray_menu(hwnd: HWND) {
             return;
         }
 
-        AppendMenuW(menu, MF_STRING, 201, win::wide("Show").as_ptr());
-        AppendMenuW(menu, MF_STRING, 202, win::wide("Stop").as_ptr());
+        AppendMenuW(
+            menu,
+            MF_STRING,
+            constants::ID_TRAY_SHOW as _,
+            win::wide("Show").as_ptr(),
+        );
+        AppendMenuW(
+            menu,
+            MF_STRING,
+            constants::ID_TRAY_STOP as _,
+            win::wide("Stop").as_ptr(),
+        );
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
-        AppendMenuW(menu, MF_STRING, 203, win::wide("Exit").as_ptr());
+        AppendMenuW(
+            menu,
+            MF_STRING,
+            constants::ID_TRAY_EXIT as _,
+            win::wide("Exit").as_ptr(),
+        );
 
         SetForegroundWindow(hwnd);
 
@@ -84,16 +100,16 @@ pub fn show_tray_menu(hwnd: HWND) {
 
         DestroyMenu(menu);
 
-        match cmd {
-            201 => {
+        match cmd as u16 {
+            constants::ID_TRAY_SHOW => {
                 ShowWindow(hwnd, SW_SHOW);
                 SetForegroundWindow(hwnd);
             }
-            202 => {
-                PostMessageW(hwnd, WM_COMMAND, 104 as WPARAM, 0);
+            constants::ID_TRAY_STOP => {
+                PostMessageW(hwnd, WM_COMMAND, constants::ID_STOP as WPARAM, 0);
             }
-            203 => {
-                DestroyWindow(hwnd);
+            constants::ID_TRAY_EXIT => {
+                PostMessageW(hwnd, WM_COMMAND, constants::ID_QUIT as WPARAM, 0);
             }
             _ => {}
         }
