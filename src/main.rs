@@ -1,8 +1,12 @@
 //! ClickAssist — bind mouse positions to keyboard keys and inject them as
 //! synthetic touchscreen events on Windows.
 //!
-//! Entry point: set DPI awareness, load config, create windows, install the
-//! keyboard hook, and run the message loop.
+//! Entry point: set DPI awareness, load config, create windows (main +
+//! overlay), install the keyboard hook, and run the message loop.
+//!
+//! The main window is built on [`winwrapper`]'s `Window` trait, with child
+//! buttons created via [`winwrapper::controls`] and automatically laid out
+//! using [`winwrapper::layout::Layout`].
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -20,10 +24,8 @@ mod window;
 use std::collections::HashMap;
 use std::mem;
 
+use winwrapper::window::Window;
 use windows_sys::Win32::Foundation::{HINSTANCE, POINT};
-use windows_sys::Win32::Graphics::Gdi::{
-    RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow,
-};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -50,7 +52,8 @@ fn main() {
     touch::init_touch_injection(10);
 
     // ---------- Create windows ----------
-    let main_hwnd = window::create_main_window(hinstance);
+    let main_window = window::MainWindow::create(hinstance);
+    let main_hwnd = main_window.base().hwnd();
     let overlay_hwnd = overlay::create_overlay_window(hinstance);
 
     // ---------- Initialise app state ----------
@@ -67,15 +70,9 @@ fn main() {
     // ---------- Show the main window ----------
     unsafe {
         ShowWindow(main_hwnd, SW_SHOW);
-        // Force child buttons to paint immediately; without RDW_ALLCHILDREN
-        // they don't appear until the window is moved/resized.
-        RedrawWindow(
-            main_hwnd,
-            std::ptr::null(),
-            std::ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
-        );
     }
+    // Force child buttons to paint immediately.
+    main_window.base().redraw(true);
 
     // ---------- Install keyboard hook ----------
     let _hook = hook::install_keyboard_hook();
@@ -90,6 +87,7 @@ fn main() {
     unsafe {
         DestroyWindow(overlay_hwnd);
     }
+    // `main_window` is dropped here (Base::drop → DestroyWindow).
 
     std::process::exit(exit_code);
 }

@@ -1,182 +1,221 @@
-//! Main window creation, toolbar buttons, and `WndProc` message routing.
+//! Main window created via `winwrapper`'s `Window` trait, with child
+//! buttons managed by `winwrapper::controls` and automatically laid out
+//! using `winwrapper::layout::Layout` on every `WM_SIZE`.
 
-use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::Graphics::Gdi::*;
+use std::sync::Arc;
+
+use winwrapper::controls;
+use winwrapper::error::WinError;
+use winwrapper::layout::{Item, Layout, Orientation};
+use winwrapper::mutex::Mutex;
+use winwrapper::utils::HWNDWrapper;
+use winwrapper::window::{register_classname, Base, BaseRef, Window};
+use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use windows_sys::core::w;
 
-use crate::app::STATE;
-use crate::{tray, utils};
+use crate::app::{constants, STATE};
+use crate::tray;
 
+/// Custom message sent by the tray icon on mouse events.
 pub const WM_TRAY: u32 = WM_APP + 1;
 
-const CLASS_NAME: &str = "ClickAssistMain";
-
-/// Toolbar button layout.
+// Layout constants
 const BTN_WIDTH: i32 = 120;
-const BTN_HEIGHT: i32 = 32;
-const BTN_MARGIN: i32 = 12;
-
-/// Client-area width/height of the main window.
-const WINDOW_WIDTH: i32 = (BTN_WIDTH + BTN_HEIGHT) * 5;
+const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 5 + 12;
 const WINDOW_HEIGHT: i32 = 100;
 
-/// Register the window class and create the main window.
-pub fn create_main_window(hinstance: HINSTANCE) -> HWND {
-    let class_name = utils::wide(CLASS_NAME);
-    let window_title = utils::wide("ClickAssist");
+// ---------------------------------------------------------------------------
+// Main window struct
+// ---------------------------------------------------------------------------
 
-    // ---------- Register the window class ----------
-    let wc = WNDCLASSW {
-        style: CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(wnd_proc),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hInstance: hinstance,
-        hIcon: unsafe { LoadIconW(std::ptr::null_mut(), IDI_APPLICATION) },
-        hCursor: unsafe { LoadCursorW(std::ptr::null_mut(), IDC_ARROW) },
-        hbrBackground: (COLOR_WINDOW + 1) as _,
-        lpszMenuName: std::ptr::null(),
-        lpszClassName: class_name.as_ptr(),
-    };
+pub struct MainWindow {
+    base: BaseRef,
+    layout: Mutex<Layout>,
+    // Buttons are stored for reference; the Layout already holds copies.
+    #[allow(dead_code)]
+    btn_record: HWNDWrapper,
+    #[allow(dead_code)]
+    btn_show_positions: HWNDWrapper,
+    #[allow(dead_code)]
+    btn_reset: HWNDWrapper,
+    #[allow(dead_code)]
+    btn_start: HWNDWrapper,
+    #[allow(dead_code)]
+    btn_quit: HWNDWrapper,
+}
 
-    unsafe {
-        RegisterClassW(&wc);
-    }
+impl MainWindow {
+    /// Create the main application window (hidden until `ShowWindow`).
+    pub fn create(hinstance: HINSTANCE) -> Arc<Self> {
+        let class = register_classname("ClickAssistMain");
 
-    // ---------- Create the window ----------
-    let hwnd = unsafe {
-        CreateWindowExW(
+        Base::create_window::<Self, _, WinError>(
             0,
-            class_name.as_ptr(),
-            window_title.as_ptr(),
-            // Fixed-size window: no maximize/resize.
+            class,
+            w!("ClickAssist"),
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
+            HWND::default(),
+            None,
             hinstance,
-            std::ptr::null_mut(),
+            |base| {
+                let hwnd = base.hwnd();
+
+                let btn_record = HWNDWrapper(controls::create_button(
+                    "Record",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_RECORD as isize as _),
+                    hinstance,
+                ));
+                let btn_show_positions = HWNDWrapper(controls::create_button(
+                    "Show Positions",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_SHOW_POSITIONS as isize as _),
+                    hinstance,
+                ));
+                let btn_reset = HWNDWrapper(controls::create_button(
+                    "Reset",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_RESET as isize as _),
+                    hinstance,
+                ));
+                let btn_start = HWNDWrapper(controls::create_button(
+                    "Start",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_START as isize as _),
+                    hinstance,
+                ));
+                let btn_quit = HWNDWrapper(controls::create_button(
+                    "Quit",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_QUIT as isize as _),
+                    hinstance,
+                ));
+
+                let layout = Layout {
+                    orientation: Orientation::Horizontal,
+                    margin: 12,
+                    gap: 12,
+                    items: vec![
+                        Item::Fixed {
+                            hwnd: btn_record.clone(),
+                            size: BTN_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: btn_show_positions.clone(),
+                            size: BTN_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: btn_reset.clone(),
+                            size: BTN_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: btn_start.clone(),
+                            size: BTN_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: btn_quit.clone(),
+                            size: BTN_WIDTH,
+                        },
+                    ],
+                    ..Default::default()
+                };
+
+                let window = Arc::new(Self {
+                    base,
+                    layout: Mutex::new(layout),
+                    btn_record,
+                    btn_show_positions,
+                    btn_reset,
+                    btn_start,
+                    btn_quit,
+                });
+
+                // Perform initial layout.
+                window.layout_widgets();
+
+                Ok(window)
+            },
         )
-    };
+        .expect("failed to create main window")
+    }
 
-    hwnd
-}
-
-/// Create the three toolbar buttons (Record / Show Positions / Start) as
-/// child `BUTTON` controls laid out in a row.
-fn create_buttons(parent: HWND) {
-    let buttons = [
-        (crate::app::constants::ID_RECORD, "Record"),
-        (crate::app::constants::ID_SHOW_POSITIONS, "Show Positions"),
-        (crate::app::constants::ID_RESET, "Reset"),
-        (crate::app::constants::ID_START, "Start"),
-        (crate::app::constants::ID_QUIT, "Quit"),
-    ];
-
-    let btn_class = utils::wide("BUTTON");
-
-    for (i, (id, label)) in buttons.iter().enumerate() {
-        let btn_text = utils::wide(label);
-        let x = BTN_MARGIN + i as i32 * (BTN_WIDTH + BTN_MARGIN);
-
-        let hwnd = unsafe {
-            CreateWindowExW(
-                0,
-                btn_class.as_ptr(),
-                btn_text.as_ptr(),
-                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON as u32,
-                x,
-                BTN_MARGIN,
-                BTN_WIDTH,
-                BTN_HEIGHT,
-                parent,
-                *id as isize as _,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-
-        if hwnd != std::ptr::null_mut() {
-            set_button_font(hwnd);
+    /// Position all child buttons according to the current client rect.
+    fn layout_widgets(&self) {
+        let mut rect = RECT::default();
+        unsafe {
+            GetClientRect(self.base.hwnd(), &mut rect);
         }
+        self.layout.lock().arrange(rect);
     }
 }
 
-/// Set a basic GUI font on a child button so it doesn't use the system
-/// fixed font.
-fn set_button_font(hwnd: HWND) {
-    unsafe {
-        let hfont = CreateFontW(
-            18,
-            0,
-            0,
-            0,
-            FW_NORMAL as i32,
-            0,
-            0,
-            0,
-            DEFAULT_CHARSET as u32,
-            OUT_DEFAULT_PRECIS as u32,
-            CLIP_DEFAULT_PRECIS as u32,
-            DEFAULT_QUALITY as u32,
-            FF_DONTCARE as u32,
-            utils::wide("Segoe UI").as_ptr(),
-        );
-        if hfont != std::ptr::null_mut() {
-            SendMessageW(hwnd, WM_SETFONT, hfont as WPARAM, 1); // 1 = redraw
-        }
+// ---------------------------------------------------------------------------
+// Window trait
+// ---------------------------------------------------------------------------
+
+impl Window for MainWindow {
+    fn base(&self) -> &BaseRef {
+        &self.base
     }
-}
 
-/// Window procedure for the main window.
-pub unsafe extern "system" fn wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        // ---------- Window created: build the toolbar ----------
-        WM_CREATE => {
-            create_buttons(hwnd);
-            0
-        }
-
-        // ---------- Toolbar button / tray-menu commands ----------
-        WM_COMMAND => {
-            // Low word of wparam is the control/command id.
-            let id = (wparam & 0xFFFF) as u16;
-            STATE.with(|s| {
-                s.borrow_mut().on_toolbar_command(id);
-            });
-            0
-        }
-
-        // ---------- Tray icon callback ----------
-        WM_TRAY => {
-            tray::handle_tray_message(hwnd, wparam, lparam);
-            0
-        }
-
-        // ---------- Close: hide to tray instead of exiting ----------
-        WM_CLOSE => {
-            unsafe {
-                ShowWindow(hwnd, SW_HIDE);
+    fn wndproc(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        match msg {
+            WM_SIZE => {
+                self.layout_widgets();
+                0
             }
-            0
-        }
 
-        // ---------- Destroy: quit the message loop ----------
-        WM_DESTROY => {
-            unsafe {
-                PostQuitMessage(0);
+            WM_COMMAND => {
+                let id = (wparam & 0xFFFF) as u16;
+                STATE.with(|s| s.borrow_mut().on_toolbar_command(id));
+                0
             }
-            0
-        }
 
-        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+            WM_TRAY => {
+                tray::handle_tray_message(self.base.hwnd(), wparam, lparam);
+                0
+            }
+
+            WM_CLOSE => {
+                unsafe {
+                    ShowWindow(self.base.hwnd(), SW_HIDE);
+                }
+                0
+            }
+
+            WM_DESTROY => {
+                unsafe {
+                    PostQuitMessage(0);
+                }
+                0
+            }
+
+            _ => unsafe { DefWindowProcW(self.base.hwnd(), msg, wparam, lparam) },
+        }
     }
 }

@@ -10,6 +10,7 @@ dependencies = [
  "serde_json",
  "windows-sys",
  "winresource",
+ "winwrapper",
 ]
 
 [[package]]
@@ -207,6 +208,14 @@ checksum = "0986a8b1d586b7d3e4fe3d9ea39fb451ae22869dcea4aa109d287a374d866087"
 dependencies = [
  "toml",
  "version_check",
+]
+
+[[package]]
+name = "winwrapper"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "windows-sys",
 ]
 
 [[package]]
