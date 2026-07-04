@@ -4,17 +4,17 @@
 
 use std::sync::Arc;
 
-use windows_sys::core::w;
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use windows_sys::core::w;
 use winwrapper::controls;
 use winwrapper::error::WinError;
 use winwrapper::layout::{Item, Layout, Orientation};
 use winwrapper::mutex::Mutex;
 use winwrapper::utils::HWNDWrapper;
-use winwrapper::window::{register_classname, Base, BaseRef, Window};
+use winwrapper::window::{Base, BaseRef, Window, register_classname};
 
-use crate::app::{constants, STATE};
+use crate::app::{STATE, constants};
 use crate::tray;
 
 /// Custom message sent by the tray icon on mouse events.

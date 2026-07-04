@@ -24,10 +24,10 @@ mod window;
 use std::collections::HashMap;
 use std::mem;
 
-use winwrapper::window::Window;
 use windows_sys::Win32::Foundation::{HINSTANCE, POINT};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use winwrapper::window::Window;
 
 fn main() {
     // If invoked with --touch-worker, run the touch-injection child process.
