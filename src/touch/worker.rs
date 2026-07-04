@@ -15,6 +15,9 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{GetLastError, POINT, RECT};
+use windows_sys::Win32::UI::HiDpi::{
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
+};
 use windows_sys::Win32::UI::Input::Pointer::{
     InitializeTouchInjection, InjectTouchInput, POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT,
     POINTER_FLAG_INRANGE, POINTER_FLAG_UP, POINTER_FLAG_UPDATE, POINTER_FLAGS, POINTER_TOUCH_INFO,
@@ -58,6 +61,11 @@ const MOVE_DURATION: Duration = Duration::from_secs(1);
 // ---------------------------------------------------------------------------
 
 pub fn run(max_contacts: u32) -> ! {
+    let ok = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    if ok == 0 {
+        eprintln!("Failed to set DPI awareness. Pointer location may be inaccurate.");
+    }
+
     let ok = unsafe { InitializeTouchInjection(max_contacts, TOUCH_FEEDBACK_DEFAULT) };
     if ok == 0 {
         // Best-effort; we still run the loop so the parent doesn't hang.
