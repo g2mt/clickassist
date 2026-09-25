@@ -168,7 +168,9 @@ pub fn remove_binding_at(x: i32, y: i32) -> bool {
 
     let removed = STATE.with(|state| {
         let mut state = state.borrow_mut();
-        if !state.overlay_visible {
+        // Bindings are locked while touch injection is running. Let this
+        // right-click pass through rather than changing the active mapping.
+        if !state.overlay_visible || state.mode == crate::app::Mode::Started {
             return false;
         }
         state.remove_binding(vk);
