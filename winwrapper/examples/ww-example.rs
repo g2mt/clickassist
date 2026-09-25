@@ -50,7 +50,7 @@ impl App {
         let class = register_classname("WWExampleClass");
 
         // Create the window via Base
-        Base::create_window::<Self, _>(
+        Base::create_window::<Self, _, _>(
             0,
             class,
             w!("winwrapper example"),
