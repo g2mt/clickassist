@@ -109,6 +109,11 @@ impl AppState {
                 if down && !self.is_modifier(vk) {
                     self.bind_key(vk);
                     true // swallow
+                } else if !down && self.bindings.contains_key(&vk) {
+                    // The matching key-down was swallowed while recording;
+                    // swallow its key-up too so the foreground app never
+                    // receives an unmatched release.
+                    true
                 } else {
                     false
                 }
@@ -165,9 +170,11 @@ impl AppState {
         };
         let _ = config::save(&cfg);
 
-        // Redraw overlay if visible
+        // Preserve the positions overlay while recording. Invalidating it
+        // causes a normal WM_PAINT redraw; it must not be toggled or hidden
+        // when the recorded key is pressed.
         if self.overlay_visible && self.overlay_hwnd != std::ptr::null_mut() {
-            overlay::show_overlay(self.overlay_hwnd, &self.bindings);
+            overlay::refresh_overlay(self.overlay_hwnd);
         }
 
         // Hide instruction tooltip

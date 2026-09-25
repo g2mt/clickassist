@@ -7,6 +7,7 @@ use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RE
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+use crate::app::STATE;
 use crate::{bindings, utils};
 
 const OVERLAY_CLASS: &str = "ClickAssistOverlay";
@@ -80,8 +81,13 @@ pub fn show_overlay(overlay: HWND, bindings: &HashMap<u32, POINT>) {
         );
         InvalidateRect(overlay, std::ptr::null(), 1);
     }
+}
 
-    paint_now(overlay, bindings);
+/// Redraw a visible overlay after its bindings change.
+pub fn refresh_overlay(overlay: HWND) {
+    unsafe {
+        InvalidateRect(overlay, std::ptr::null(), 1);
+    }
 }
 
 /// Hide the overlay.
@@ -100,7 +106,22 @@ pub unsafe extern "system" fn overlay_proc(
 ) -> LRESULT {
     match msg {
         WM_PAINT => {
-            unsafe { ValidateRect(hwnd, std::ptr::null()) };
+            unsafe {
+                let mut ps: PAINTSTRUCT = std::mem::zeroed();
+                let hdc = BeginPaint(hwnd, &mut ps);
+
+                if hdc != std::ptr::null_mut() {
+                    // The layered window uses this colour as its transparent
+                    // colorkey, so erase with it before redrawing the labels.
+                    let brush = CreateSolidBrush((COLOR_WINDOW + 1) as u32);
+                    FillRect(hdc, &ps.rcPaint, brush);
+                    DeleteObject(brush as _);
+
+                    STATE.with(|state| paint_bindings(hdc, &state.borrow().bindings));
+                }
+
+                EndPaint(hwnd, &ps);
+            }
             0
         }
         WM_ERASEBKGND => {
@@ -120,20 +141,6 @@ pub unsafe extern "system" fn overlay_proc(
             1
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
-    }
-}
-
-/// Render all bindings onto the overlay immediately.
-fn paint_now(hwnd: HWND, bindings: &HashMap<u32, POINT>) {
-    let hdc = unsafe { GetDC(hwnd) };
-    if hdc == std::ptr::null_mut() {
-        return;
-    }
-
-    paint_bindings(hdc, bindings);
-
-    unsafe {
-        ReleaseDC(hwnd, hdc);
     }
 }
 
