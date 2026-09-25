@@ -65,6 +65,24 @@ pub unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: L
         unsafe { &*(lparam as *const _) };
     let vk_code: u32 = kbd.vkCode;
 
+    // Handle Esc before record-mode key binding. Otherwise it is treated as
+    // the next key to record and creates an unwanted Escape position.
+    if wparam as u32 == WM_KEYDOWN && vk_code == 0x1B {
+        let cancelled = STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.mode == crate::app::Mode::Recording {
+                s.mode = crate::app::Mode::Idle;
+                crate::tooltip::hide_tooltip();
+                true
+            } else {
+                false
+            }
+        });
+        if cancelled {
+            return 1;
+        }
+    }
+
     let (down, swallow) = match wparam as u32 {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
             // Auto-repeat filter: bit 30 is set for repeats
@@ -87,18 +105,6 @@ pub unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: L
         }
         _ => (false, false),
     };
-
-    // Esc cancels recording
-    if vk_code == 0x1B && down {
-        STATE.with(|s| {
-            let mut s = s.borrow_mut();
-            if s.mode == crate::app::Mode::Recording {
-                s.mode = crate::app::Mode::Idle;
-                crate::tooltip::hide_tooltip();
-            }
-        });
-        return 1;
-    }
 
     if swallow {
         1
