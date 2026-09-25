@@ -7,7 +7,7 @@ use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::app::STATE;
+use crate::{app::STATE, overlay};
 
 /// The hook handle, set by `install_keyboard_hook`.
 static mut HOOK_HANDLE: HHOOK = std::ptr::null_mut();
@@ -26,6 +26,19 @@ pub fn install_keyboard_hook() -> HHOOK {
 
     unsafe {
         HOOK_HANDLE = hook;
+    }
+
+    hook
+}
+
+/// Install a global mouse observer so the transparent overlay can still
+/// respond to right-clicks without intercepting clicks from other apps.
+pub fn install_mouse_hook() -> HHOOK {
+    let hmod = unsafe { GetModuleHandleW(std::ptr::null()) };
+    let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), hmod, 0) };
+
+    if hook == std::ptr::null_mut() {
+        panic!("SetWindowsHookExW(WH_MOUSE_LL) failed");
     }
 
     hook
@@ -91,4 +104,15 @@ pub unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: L
     } else {
         unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
     }
+}
+
+/// Global mouse hook callback. The overlay itself remains transparent, while
+/// this observes right-clicks to support removing a position dot.
+pub unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code >= 0 && wparam as u32 == WM_RBUTTONUP {
+        let mouse: &MSLLHOOKSTRUCT = unsafe { &*(lparam as *const _) };
+        overlay::remove_binding_at(mouse.pt.x, mouse.pt.y);
+    }
+
+    unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
 }

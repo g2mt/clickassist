@@ -75,14 +75,16 @@ fn main() {
     main_window.base().redraw(true);
 
     // ---------- Install keyboard hook ----------
-    let _hook = hook::install_keyboard_hook();
+    let _keyboard_hook = hook::install_keyboard_hook();
+    let _mouse_hook = hook::install_mouse_hook();
 
     // ---------- Message loop ----------
     let exit_code = run_message_loop();
 
     // ---------- Cleanup ----------
     touch::deinit_touch_injection();
-    hook::uninstall_keyboard_hook(_hook);
+    hook::uninstall_keyboard_hook(_keyboard_hook);
+    hook::uninstall_keyboard_hook(_mouse_hook);
     tray::remove_tray_icon(&tray_data);
     unsafe {
         DestroyWindow(overlay_hwnd);

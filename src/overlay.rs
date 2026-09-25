@@ -43,7 +43,7 @@ pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
 
     let hwnd = unsafe {
         CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             utils::wide(OVERLAY_CLASS).as_ptr(),
             std::ptr::null(),
             WS_POPUP,
@@ -118,40 +118,19 @@ pub unsafe extern "system" fn overlay_proc(
                     FillRect(hdc, &ps.rcPaint, brush);
                     DeleteObject(brush as _);
 
-                    STATE.with(|state| paint_bindings(hdc, &state.borrow().bindings));
+                    STATE.with(|state| {
+                        let state = state.borrow();
+                        paint_bindings(hdc, &state.bindings, &state.pressed);
+                    });
                 }
 
                 EndPaint(hwnd, &ps);
             }
             0
         }
-        WM_NCHITTEST => {
-            // WM_NCHITTEST supplies screen coordinates directly.
-            let x = (lparam as i32 & 0xFFFF) as i16 as i32;
-            let y = ((lparam as i32 >> 16) & 0xFFFF) as i16 as i32;
-
-            // Remain click-through everywhere except a dot, so applications
-            // beneath the overlay continue to receive normal mouse input.
-            if binding_at(x, y).is_some() {
-                HTCLIENT as LRESULT
-            } else {
-                HTTRANSPARENT as LRESULT
-            }
-        }
-        WM_RBUTTONUP => {
-            let mut point = POINT {
-                x: (lparam as i32 & 0xFFFF) as i16 as i32,
-                y: ((lparam as i32 >> 16) & 0xFFFF) as i16 as i32,
-            };
-            unsafe {
-                ClientToScreen(hwnd, &mut point);
-            }
-
-            if let Some(vk) = binding_at(point.x, point.y) {
-                STATE.with(|state| state.borrow_mut().remove_binding(vk));
-            }
-            0
-        }
+        // The overlay must never consume mouse input. Right-click deletion is
+        // handled by the global mouse hook so clicks still reach the app below.
+        WM_NCHITTEST => HTTRANSPARENT as LRESULT,
         WM_ERASEBKGND => {
             unsafe {
                 let hdc = wparam as HDC;
@@ -172,6 +151,21 @@ pub unsafe extern "system" fn overlay_proc(
     }
 }
 
+/// Remove the dot at a screen coordinate, if the overlay is currently shown.
+/// Called from the global mouse hook so this window can remain click-through.
+pub fn remove_binding_at(x: i32, y: i32) {
+    let Some(vk) = binding_at(x, y) else {
+        return;
+    };
+
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.overlay_visible {
+            state.remove_binding(vk);
+        }
+    });
+}
+
 /// Return the binding whose dot contains the given screen-coordinate point.
 fn binding_at(x: i32, y: i32) -> Option<u32> {
     STATE.with(|state| {
@@ -188,21 +182,28 @@ fn binding_at(x: i32, y: i32) -> Option<u32> {
     })
 }
 
-/// Draw dots and labels for each binding.
-fn paint_bindings(hdc: HDC, bindings: &HashMap<u32, POINT>) {
+/// Draw dots and labels for each binding, highlighting keys currently held.
+fn paint_bindings(
+    hdc: HDC,
+    bindings: &HashMap<u32, POINT>,
+    pressed: &std::collections::HashSet<u32>,
+) {
     for (&vk, &pt) in bindings {
-        draw_dot(hdc, pt.x, pt.y);
+        draw_dot(hdc, pt.x, pt.y, pressed.contains(&vk));
         let label = bindings::vk_to_label(vk);
         draw_centered_label(hdc, pt.x, pt.y - DOT_RADIUS - LABEL_GAP, &label);
     }
 }
 
-/// Draw a small filled circle at (cx, cy).
-fn draw_dot(hdc: HDC, cx: i32, cy: i32) {
+/// Draw a small filled circle at (cx, cy). Active keys are blue.
+fn draw_dot(hdc: HDC, cx: i32, cy: i32, active: bool) {
+    // Windows COLORREF is 0x00bbggrr: active is blue, inactive is red.
+    let color = if active { 0x00FF0000 } else { 0x000000FF };
+
     unsafe {
-        let brush = CreateSolidBrush(0x0000FF);
+        let brush = CreateSolidBrush(color);
         let old_brush = SelectObject(hdc, brush as _);
-        let pen = CreatePen(PS_SOLID, 1, 0x0000FF);
+        let pen = CreatePen(PS_SOLID, 1, color);
         let old_pen = SelectObject(hdc, pen as _);
 
         Ellipse(

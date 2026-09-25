@@ -4,7 +4,7 @@
 //! same UI thread that owns the message loop.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use windows_sys::Win32::Foundation::{HWND, POINT};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -35,6 +35,8 @@ pub struct AppState {
     pub mode: Mode,
     pub bindings: HashMap<u32, POINT>,
     pub active: HashMap<u32, touch::PointerId>,
+    /// Bound keyboard keys currently held down; used by the overlay highlight.
+    pub pressed: HashSet<u32>,
     pub ctrl_down: bool,
     pub gesture_anchor: Option<u32>,
     pub overlay_visible: bool,
@@ -48,6 +50,7 @@ impl Default for AppState {
             mode: Mode::Idle,
             bindings: HashMap::new(),
             active: HashMap::new(),
+            pressed: HashSet::new(),
             ctrl_down: false,
             gesture_anchor: None,
             overlay_visible: false,
@@ -121,14 +124,18 @@ impl AppState {
 
             Mode::Started => {
                 if !down {
-                    // Key up: release touch if active
+                    // Key up: release touch and remove its visual highlight.
+                    let was_pressed = self.pressed.remove(&vk);
                     self.release_touch(vk);
-                    // Don't swallow key-up for non-bound keys
-                    self.active.contains_key(&vk)
+                    self.refresh_overlay();
+                    // Swallow the matching release for an injected touch.
+                    was_pressed
                 } else if self.is_modifier(vk) {
                     false // pass through modifiers
                 } else if self.bindings.contains_key(&vk) {
+                    self.pressed.insert(vk);
                     self.process_bound_key_down(vk);
+                    self.refresh_overlay();
                     true // swallow
                 } else {
                     false // non-bound key, pass through
@@ -203,6 +210,11 @@ impl AppState {
         let _ = config::save(&cfg);
 
         // Keep Show Positions in sync immediately after a dot is removed.
+        self.refresh_overlay();
+    }
+
+    /// Queue a redraw when the overlay is visible, including active-key state.
+    fn refresh_overlay(&self) {
         if self.overlay_visible && self.overlay_hwnd != std::ptr::null_mut() {
             overlay::refresh_overlay(self.overlay_hwnd);
         }
@@ -225,6 +237,7 @@ impl AppState {
             self.release_touch(vk);
         }
         self.active.clear();
+        self.pressed.clear();
         self.gesture_anchor = None;
         self.bindings.clear();
 
@@ -269,6 +282,7 @@ impl AppState {
             self.release_touch(vk);
         }
         self.active.clear();
+        self.pressed.clear();
         self.gesture_anchor = None;
         self.mode = Mode::Idle;
         unsafe {
@@ -325,6 +339,7 @@ impl AppState {
     fn finalise_gesture(&mut self) {
         if let Some(anchor_vk) = self.gesture_anchor.take() {
             self.release_touch(anchor_vk);
+            self.refresh_overlay();
         }
     }
 }
