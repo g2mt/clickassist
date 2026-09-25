@@ -1,5 +1,8 @@
 # ClickAssist
 
+> [!WARNING]
+> Contains mostly AI generated code. This README is also generated, however I have checked the README for accuracy.
+
 Bind mouse positions to keyboard keys and inject them as synthetic touchscreen events on Windows.
 
 Assign keyboard shortcuts to screen positions. Pressing a bound key injects a touch contact at the saved location.
@@ -40,4 +43,6 @@ Windows 8 or later (for `InitializeTouchInjection` / `InjectTouchInput`).
 
 ## License
 
-MIT
+MIT No Attribution.
+
+AI-Disclosure: ai-generated.
