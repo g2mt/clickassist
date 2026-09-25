@@ -13,6 +13,7 @@ use crate::{bindings, utils};
 const OVERLAY_CLASS: &str = "ClickAssistOverlay";
 const DOT_RADIUS: i32 = 6;
 const LABEL_GAP: i32 = 4;
+const HIT_RADIUS: i32 = DOT_RADIUS + 6;
 
 /// Create the overlay window (initially hidden).
 pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
@@ -42,7 +43,7 @@ pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
 
     let hwnd = unsafe {
         CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             utils::wide(OVERLAY_CLASS).as_ptr(),
             std::ptr::null(),
             WS_POPUP,
@@ -124,6 +125,33 @@ pub unsafe extern "system" fn overlay_proc(
             }
             0
         }
+        WM_NCHITTEST => {
+            // WM_NCHITTEST supplies screen coordinates directly.
+            let x = (lparam as i32 & 0xFFFF) as i16 as i32;
+            let y = ((lparam as i32 >> 16) & 0xFFFF) as i16 as i32;
+
+            // Remain click-through everywhere except a dot, so applications
+            // beneath the overlay continue to receive normal mouse input.
+            if binding_at(x, y).is_some() {
+                HTCLIENT as LRESULT
+            } else {
+                HTTRANSPARENT as LRESULT
+            }
+        }
+        WM_RBUTTONUP => {
+            let mut point = POINT {
+                x: (lparam as i32 & 0xFFFF) as i16 as i32,
+                y: ((lparam as i32 >> 16) & 0xFFFF) as i16 as i32,
+            };
+            unsafe {
+                ClientToScreen(hwnd, &mut point);
+            }
+
+            if let Some(vk) = binding_at(point.x, point.y) {
+                STATE.with(|state| state.borrow_mut().remove_binding(vk));
+            }
+            0
+        }
         WM_ERASEBKGND => {
             unsafe {
                 let hdc = wparam as HDC;
@@ -142,6 +170,22 @@ pub unsafe extern "system" fn overlay_proc(
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
+}
+
+/// Return the binding whose dot contains the given screen-coordinate point.
+fn binding_at(x: i32, y: i32) -> Option<u32> {
+    STATE.with(|state| {
+        state
+            .borrow()
+            .bindings
+            .iter()
+            .find(|(_, position)| {
+                let dx = x - position.x;
+                let dy = y - position.y;
+                dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS
+            })
+            .map(|(&vk, _)| vk)
+    })
 }
 
 /// Draw dots and labels for each binding.

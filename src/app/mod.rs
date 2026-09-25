@@ -183,6 +183,31 @@ impl AppState {
 
     // ---------- Overlay ----------
 
+    /// Remove a binding selected from the positions overlay.
+    pub fn remove_binding(&mut self, vk: u32) {
+        if self.bindings.remove(&vk).is_none() {
+            return;
+        }
+
+        let cfg = config::Config {
+            bindings: self
+                .bindings
+                .iter()
+                .map(|(&vk, &pt)| bindings::Binding {
+                    vk,
+                    x: pt.x,
+                    y: pt.y,
+                })
+                .collect(),
+        };
+        let _ = config::save(&cfg);
+
+        // Keep Show Positions in sync immediately after a dot is removed.
+        if self.overlay_visible && self.overlay_hwnd != std::ptr::null_mut() {
+            overlay::refresh_overlay(self.overlay_hwnd);
+        }
+    }
+
     fn toggle_overlay(&mut self) {
         self.overlay_visible = !self.overlay_visible;
         if self.overlay_visible {
