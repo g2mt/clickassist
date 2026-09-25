@@ -1,6 +1,7 @@
 //! Transparent, click-through, top-most overlay window that draws each bound
 //! key as a dot with a centred label above it.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -14,6 +15,12 @@ const OVERLAY_CLASS: &str = "ClickAssistOverlay";
 const DOT_RADIUS: i32 = 6;
 const LABEL_GAP: i32 = 4;
 const HIT_RADIUS: i32 = DOT_RADIUS + 6;
+
+thread_local! {
+    /// Whether the preceding right-button down removed a dot. This lets the
+    /// mouse hook swallow its matching button-up too.
+    static REMOVED_RIGHT_CLICK: Cell<bool> = const { Cell::new(false) };
+}
 
 /// Create the overlay window (initially hidden).
 pub fn create_overlay_window(hinstance: HINSTANCE) -> HWND {
@@ -152,18 +159,31 @@ pub unsafe extern "system" fn overlay_proc(
 }
 
 /// Remove the dot at a screen coordinate, if the overlay is currently shown.
-/// Called from the global mouse hook so this window can remain click-through.
-pub fn remove_binding_at(x: i32, y: i32) {
+/// Returns whether a binding was removed. Called from the global mouse hook so
+/// this window can remain click-through for all other mouse input.
+pub fn remove_binding_at(x: i32, y: i32) -> bool {
     let Some(vk) = binding_at(x, y) else {
-        return;
+        return false;
     };
 
-    STATE.with(|state| {
+    let removed = STATE.with(|state| {
         let mut state = state.borrow_mut();
-        if state.overlay_visible {
-            state.remove_binding(vk);
+        if !state.overlay_visible {
+            return false;
         }
+        state.remove_binding(vk);
+        true
     });
+
+    if removed {
+        REMOVED_RIGHT_CLICK.with(|removed| removed.set(true));
+    }
+    removed
+}
+
+/// Take the pending right-click suppression flag set when a dot was removed.
+pub fn take_removed_right_click() -> bool {
+    REMOVED_RIGHT_CLICK.with(|removed| removed.replace(false))
 }
 
 /// Return the binding whose dot contains the given screen-coordinate point.

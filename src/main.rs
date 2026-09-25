@@ -83,8 +83,8 @@ fn main() {
 
     // ---------- Cleanup ----------
     touch::deinit_touch_injection();
-    hook::uninstall_keyboard_hook(_keyboard_hook);
-    hook::uninstall_keyboard_hook(_mouse_hook);
+    hook::uninstall_hook(_keyboard_hook);
+    hook::uninstall_hook(_mouse_hook);
     tray::remove_tray_icon(&tray_data);
     unsafe {
         DestroyWindow(overlay_hwnd);
