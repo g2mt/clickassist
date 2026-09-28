@@ -23,7 +23,7 @@ A low-level keyboard hook (`WH_KEYBOARD_LL`) sends JSON commands over stdin to a
 - **Record**: Click Record, then press any key to bind it to the mouse position.
 - **Show Positions**: Toggle a transparent overlay showing all saved bindings.
 - **Reset**: Clear all bindings and hide the overlay.
-- **Start**: Activate bindings while keeping the main window visible. Press bound keys to inject touches.
+- **Start / Stop**: Click Start to activate bindings while keeping the main window visible; the button changes to Stop. Click Stop to deactivate bindings. Press bound keys while started to inject touches.
 - **Minimise**: Hide the main window to the tray. Click the tray icon or choose Show to bring it back.
 - **Stop (Tray)**: Right-click the tray icon and select Stop to return to idle.
 - **Esc**: Cancel recording mode.

@@ -73,12 +73,18 @@ thread_local! {
 // ---------------------------------------------------------------------------
 
 impl AppState {
-    /// Handle a toolbar button command (Record / Show Positions / Start / Stop).
+    /// Handle a toolbar or tray command (Record / Show Positions / Start / Stop).
     pub fn on_toolbar_command(&mut self, id: u16) {
         match id {
             constants::ID_RECORD => self.enter_recording(),
             constants::ID_SHOW_POSITIONS => self.toggle_overlay(),
-            constants::ID_START => self.enter_started(),
+            constants::ID_START => {
+                if self.mode == Mode::Started {
+                    self.stop();
+                } else {
+                    self.enter_started();
+                }
+            }
             constants::ID_STOP => self.stop(), // tray "Stop"
             constants::ID_QUIT => unsafe {
                 PostQuitMessage(0);
@@ -240,6 +246,7 @@ impl AppState {
         self.pressed.clear();
         self.gesture_anchor = None;
         self.bindings.clear();
+        self.mode = Mode::Idle;
 
         // Persist empty config
         let _ = config::save(&config::Config { bindings: vec![] });

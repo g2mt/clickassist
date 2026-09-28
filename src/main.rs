@@ -94,8 +94,7 @@ fn main() {
     std::process::exit(exit_code);
 }
 
-/// Classic Win32 message pump. Dispatches toolbar commands to the app
-/// controller.
+/// Classic Win32 message pump. Window procedures handle toolbar commands.
 fn run_message_loop() -> i32 {
     let mut msg: MSG = unsafe { mem::zeroed() };
 
@@ -112,14 +111,6 @@ fn run_message_loop() -> i32 {
                 unsafe {
                     TranslateMessage(&msg);
                     DispatchMessageW(&msg);
-                }
-
-                // Handle toolbar and tray menu commands after dispatch
-                if msg.message == WM_COMMAND {
-                    let id = (msg.wParam & 0xFFFF) as u16;
-                    app::STATE.with(|s| {
-                        s.borrow_mut().on_toolbar_command(id);
-                    });
                 }
             }
         }

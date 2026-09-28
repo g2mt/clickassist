@@ -196,7 +196,18 @@ impl Window for MainWindow {
 
             WM_COMMAND => {
                 let id = (wparam & 0xFFFF) as u16;
-                STATE.with(|s| s.borrow_mut().on_toolbar_command(id));
+                STATE.with(|s| {
+                    let mut state = s.borrow_mut();
+                    state.on_toolbar_command(id);
+                    let label = if state.mode == crate::app::Mode::Started {
+                        w!("Stop")
+                    } else {
+                        w!("Start")
+                    };
+                    unsafe {
+                        SetWindowTextW(self.btn_start.0, label);
+                    }
+                });
                 0
             }
 
