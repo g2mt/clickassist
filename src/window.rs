@@ -184,7 +184,13 @@ impl Window for MainWindow {
     fn wndproc(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         match msg {
             WM_SIZE => {
-                self.layout_widgets();
+                if wparam as u32 == SIZE_MINIMIZED {
+                    unsafe {
+                        ShowWindow(self.base.hwnd(), SW_HIDE);
+                    }
+                } else {
+                    self.layout_widgets();
+                }
                 0
             }
 
@@ -201,7 +207,7 @@ impl Window for MainWindow {
 
             WM_CLOSE => {
                 unsafe {
-                    ShowWindow(self.base.hwnd(), SW_HIDE);
+                    ShowWindow(self.base.hwnd(), SW_MINIMIZE);
                 }
                 0
             }

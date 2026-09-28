@@ -23,7 +23,7 @@ pub enum Mode {
     Idle,
     /// Waiting for a key press to bind current cursor position.
     Recording,
-    /// Window hidden, bound keys injected as touch events.
+    /// Bound keys are injected as touch events; the main window may remain visible.
     Started,
 }
 
@@ -269,9 +269,6 @@ impl AppState {
             return;
         }
         self.mode = Mode::Started;
-        unsafe {
-            ShowWindow(self.main_hwnd, SW_HIDE);
-        }
     }
 
     // ---------- Stop ----------
@@ -286,7 +283,7 @@ impl AppState {
         self.gesture_anchor = None;
         self.mode = Mode::Idle;
         unsafe {
-            ShowWindow(self.main_hwnd, SW_SHOW);
+            ShowWindow(self.main_hwnd, SW_RESTORE);
         }
     }
 

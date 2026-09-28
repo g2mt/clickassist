@@ -46,7 +46,7 @@ pub fn handle_tray_message(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) {
 
     match lparam {
         WM_LBUTTONUP => unsafe {
-            ShowWindow(hwnd, SW_SHOW);
+            ShowWindow(hwnd, SW_RESTORE);
             SetForegroundWindow(hwnd);
         },
         WM_RBUTTONUP => {
@@ -103,7 +103,7 @@ pub fn show_tray_menu(hwnd: HWND) {
 
         match cmd as u16 {
             constants::ID_TRAY_SHOW => {
-                ShowWindow(hwnd, SW_SHOW);
+                ShowWindow(hwnd, SW_RESTORE);
                 SetForegroundWindow(hwnd);
                 RedrawWindow(
                     hwnd,
