@@ -4,6 +4,7 @@ pub const ID_START: u16 = 103;
 pub const ID_STOP: u16 = 104;
 pub const ID_QUIT: u16 = 105;
 pub const ID_RESET: u16 = 106;
+pub const ID_KILL_EXPLORER: u16 = 107;
 
 // Tray context-menu item IDs
 pub const ID_TRAY_SHOW: u16 = 201;

@@ -5,6 +5,10 @@
 use std::sync::Arc;
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::UI::Controls::{
+    InitCommonControls, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH,
+    TTTOOLINFOW, TTS_ALWAYSTIP, TTS_NOPREFIX,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::core::w;
 use winwrapper::controls;
@@ -22,7 +26,7 @@ pub const WM_TRAY: u32 = WM_APP + 1;
 
 // Layout constants
 const BTN_WIDTH: i32 = 120;
-const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 5 + 12;
+const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 6 + 12;
 const WINDOW_HEIGHT: i32 = 100;
 
 // ---------------------------------------------------------------------------
@@ -32,7 +36,10 @@ const WINDOW_HEIGHT: i32 = 100;
 pub struct MainWindow {
     base: BaseRef,
     layout: Mutex<Layout>,
+    tooltip_hwnd: HWNDWrapper,
     // Buttons are stored for reference; the Layout already holds copies.
+    #[allow(dead_code)]
+    btn_kill_explorer: HWNDWrapper,
     #[allow(dead_code)]
     btn_record: HWNDWrapper,
     #[allow(dead_code)]
@@ -64,6 +71,56 @@ impl MainWindow {
             hinstance,
             |base| {
                 let hwnd = base.hwnd();
+                unsafe {
+                    InitCommonControls();
+                }
+
+                let btn_kill_explorer = HWNDWrapper(controls::create_button(
+                    "Kill Explorer",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_KILL_EXPLORER as isize as _),
+                    hinstance,
+                ));
+                let tooltip_hwnd = unsafe {
+                    CreateWindowExW(
+                        WS_EX_TOPMOST,
+                        w!("tooltips_class32"),
+                        std::ptr::null(),
+                        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+                        CW_USEDEFAULT,
+                        CW_USEDEFAULT,
+                        CW_USEDEFAULT,
+                        CW_USEDEFAULT,
+                        hwnd,
+                        std::ptr::null_mut(),
+                        hinstance,
+                        std::ptr::null(),
+                    )
+                };
+                if !tooltip_hwnd.is_null() {
+                    let mut tool_info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+                    tool_info.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
+                    tool_info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+                    tool_info.hwnd = hwnd;
+                    tool_info.uId = btn_kill_explorer.0 as usize;
+                    tool_info.hinst = hinstance;
+                    tool_info.lpszText = w!(
+                        "Explorer may handle some touch functions, which may interfere with ClickAssist touch input."
+                    ) as *mut u16;
+                    unsafe {
+                        SendMessageW(
+                            tooltip_hwnd,
+                            TTM_ADDTOOLW,
+                            0,
+                            &mut tool_info as *mut TTTOOLINFOW as LPARAM,
+                        );
+                        SendMessageW(tooltip_hwnd, TTM_SETMAXTIPWIDTH, 0, 350);
+                    }
+                }
 
                 let btn_record = HWNDWrapper(controls::create_button(
                     "Record",
@@ -120,6 +177,10 @@ impl MainWindow {
                     orientation: Orientation::Horizontal,
                     items: vec![
                         Item::Fixed {
+                            hwnd: btn_kill_explorer.clone(),
+                            size: BTN_WIDTH,
+                        },
+                        Item::Fixed {
                             hwnd: btn_record.clone(),
                             size: BTN_WIDTH,
                         },
@@ -146,6 +207,8 @@ impl MainWindow {
                 let window = Arc::new(Self {
                     base,
                     layout: Mutex::new(layout),
+                    tooltip_hwnd: HWNDWrapper(tooltip_hwnd),
+                    btn_kill_explorer,
                     btn_record,
                     btn_show_positions,
                     btn_reset,
@@ -185,8 +248,10 @@ impl Window for MainWindow {
         match msg {
             WM_SIZE => {
                 if wparam as u32 == SIZE_MINIMIZED {
-                    unsafe {
-                        ShowWindow(self.base.hwnd(), SW_HIDE);
+                    if crate::explorer::is_running() {
+                        unsafe {
+                            ShowWindow(self.base.hwnd(), SW_HIDE);
+                        }
                     }
                 } else {
                     self.layout_widgets();
@@ -196,18 +261,22 @@ impl Window for MainWindow {
 
             WM_COMMAND => {
                 let id = (wparam & 0xFFFF) as u16;
-                STATE.with(|s| {
-                    let mut state = s.borrow_mut();
-                    state.on_toolbar_command(id);
-                    let label = if state.mode == crate::app::Mode::Started {
-                        w!("Stop")
-                    } else {
-                        w!("Start")
-                    };
-                    unsafe {
-                        SetWindowTextW(self.btn_start.0, label);
-                    }
-                });
+                if id == constants::ID_KILL_EXPLORER {
+                    crate::explorer::kill();
+                } else {
+                    STATE.with(|s| {
+                        let mut state = s.borrow_mut();
+                        state.on_toolbar_command(id);
+                        let label = if state.mode == crate::app::Mode::Started {
+                            w!("Stop")
+                        } else {
+                            w!("Start")
+                        };
+                        unsafe {
+                            SetWindowTextW(self.btn_start.0, label);
+                        }
+                    });
+                }
                 0
             }
 
@@ -225,6 +294,9 @@ impl Window for MainWindow {
 
             WM_DESTROY => {
                 unsafe {
+                    if !self.tooltip_hwnd.0.is_null() {
+                        DestroyWindow(self.tooltip_hwnd.0);
+                    }
                     PostQuitMessage(0);
                 }
                 0

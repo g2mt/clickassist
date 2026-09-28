@@ -13,6 +13,7 @@
 mod app;
 mod bindings;
 mod config;
+mod explorer;
 mod hook;
 mod overlay;
 mod tooltip;
