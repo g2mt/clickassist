@@ -2,6 +2,7 @@
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
+use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -19,8 +20,8 @@ pub fn add_tray_icon(hwnd: HWND) -> Box<NOTIFYICONDATAW> {
     nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     nid.uCallbackMessage = WM_TRAY;
 
-    // Use the default application icon
-    nid.hIcon = unsafe { LoadIconW(std::ptr::null_mut(), IDI_APPLICATION) };
+    // Load the icon resource embedded by build.rs (winresource uses resource ID 1).
+    nid.hIcon = unsafe { LoadIconW(GetModuleHandleW(std::ptr::null()), 1 as *const u16) };
 
     let tip = utils::wide("ClickAssist");
     let tip_len = tip.len().min(127);
