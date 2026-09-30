@@ -3,6 +3,7 @@
 //! using `winwrapper::layout::Layout` on every `WM_SIZE`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::Controls::{
@@ -37,6 +38,7 @@ pub struct MainWindow {
     base: BaseRef,
     layout: Mutex<Layout>,
     tooltip_hwnd: HWNDWrapper,
+    explorer_running: AtomicBool,
     // Buttons are stored for reference; the Layout already holds copies.
     #[allow(dead_code)]
     btn_kill_explorer: HWNDWrapper,
@@ -75,8 +77,13 @@ impl MainWindow {
                     InitCommonControls();
                 }
 
+                let explorer_running = crate::explorer::is_running();
                 let btn_kill_explorer = HWNDWrapper(controls::create_button(
-                    "Kill Explorer",
+                    if explorer_running {
+                        "Kill Explorer"
+                    } else {
+                        "Launch Explorer"
+                    },
                     0,
                     0,
                     0,
@@ -109,7 +116,7 @@ impl MainWindow {
                     tool_info.uId = btn_kill_explorer.0 as usize;
                     tool_info.hinst = hinstance;
                     tool_info.lpszText = w!(
-                        "Explorer may handle some touch functions, which may interfere with ClickAssist touch input."
+                        "Left click to toggle Explorer. Explorer may handle some touch functions, which may interfere with ClickAssist touch input."
                     ) as *mut u16;
                     unsafe {
                         SendMessageW(
@@ -208,6 +215,7 @@ impl MainWindow {
                     base,
                     layout: Mutex::new(layout),
                     tooltip_hwnd: HWNDWrapper(tooltip_hwnd),
+                    explorer_running: AtomicBool::new(explorer_running),
                     btn_kill_explorer,
                     btn_record,
                     btn_show_positions,
@@ -248,7 +256,7 @@ impl Window for MainWindow {
         match msg {
             WM_SIZE => {
                 if wparam as u32 == SIZE_MINIMIZED {
-                    if crate::explorer::is_running() {
+                    if self.explorer_running.load(Ordering::Relaxed) {
                         unsafe {
                             ShowWindow(self.base.hwnd(), SW_HIDE);
                         }
@@ -262,7 +270,29 @@ impl Window for MainWindow {
             WM_COMMAND => {
                 let id = (wparam & 0xFFFF) as u16;
                 if id == constants::ID_KILL_EXPLORER {
-                    crate::explorer::kill();
+                    if self.explorer_running.load(Ordering::Relaxed) {
+                        if crate::explorer::kill() {
+                            self.explorer_running.store(false, Ordering::Relaxed);
+                            unsafe {
+                                SetWindowTextW(self.btn_kill_explorer.0, w!("Launch Explorer"));
+                            }
+                        }
+                    } else {
+                        unsafe {
+                            windows_sys::Win32::UI::Shell::ShellExecuteW(
+                                HWND::default(),
+                                w!("open"),
+                                w!("explorer.exe"),
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                SW_SHOWNORMAL,
+                            );
+                        }
+                        self.explorer_running.store(true, Ordering::Relaxed);
+                        unsafe {
+                            SetWindowTextW(self.btn_kill_explorer.0, w!("Kill Explorer"));
+                        }
+                    }
                 } else {
                     STATE.with(|s| {
                         let mut state = s.borrow_mut();
