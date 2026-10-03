@@ -36,6 +36,27 @@ const WINDOW_HEIGHT: i32 = 135;
 const TIMER_JIGGLE: usize = 1;
 const JIGGLE_INTERVAL_MS: u32 = 30_000; // 30 seconds
 
+// `SetCursorPos` alone is not considered user input by all Windows power
+// policies. Keep an explicit display-power request active while jiggling.
+const ES_CONTINUOUS: u32 = 0x8000_0000;
+const ES_DISPLAY_REQUIRED: u32 = 0x0000_0002;
+
+unsafe extern "system" {
+    fn SetThreadExecutionState(es_flags: u32) -> u32;
+}
+
+fn prevent_display_sleep() {
+    unsafe {
+        SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
+    }
+}
+
+fn allow_display_sleep() {
+    unsafe {
+        SetThreadExecutionState(ES_CONTINUOUS);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main window struct
 // ---------------------------------------------------------------------------
@@ -358,10 +379,14 @@ impl Window for MainWindow {
                         SendMessageW(self.jiggle_checkbox.0, BM_GETCHECK, 0, 0)
                     };
                     if checked == BST_CHECKED as isize {
+                        // Synthetic cursor movement is not reliably counted as
+                        // activity, so explicitly prevent display idle timeout.
+                        prevent_display_sleep();
                         unsafe {
                             SetTimer(self.base.hwnd(), TIMER_JIGGLE, JIGGLE_INTERVAL_MS, None);
                         }
                     } else {
+                        allow_display_sleep();
                         unsafe {
                             KillTimer(self.base.hwnd(), TIMER_JIGGLE);
                         }
@@ -397,6 +422,9 @@ impl Window for MainWindow {
 
             WM_TIMER => {
                 if wparam as usize == TIMER_JIGGLE {
+                    // Renew the request in case another component cleared the
+                    // thread's execution state.
+                    prevent_display_sleep();
                     let mut pt = POINT { x: 0, y: 0 };
                     unsafe {
                         GetCursorPos(&mut pt);
@@ -414,6 +442,7 @@ impl Window for MainWindow {
             }
 
             WM_DESTROY => {
+                allow_display_sleep();
                 unsafe {
                     KillTimer(self.base.hwnd(), TIMER_JIGGLE);
                     if !self.tooltip_hwnd.0.is_null() {
