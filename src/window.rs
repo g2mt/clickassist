@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::UI::Controls::{
     InitCommonControls, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH,
-    TTTOOLINFOW, TTS_ALWAYSTIP, TTS_NOPREFIX,
+    TTTOOLINFOW, TTS_ALWAYSTIP, TTS_NOPREFIX, BST_CHECKED
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::core::w;
@@ -27,8 +27,14 @@ pub const WM_TRAY: u32 = WM_APP + 1;
 
 // Layout constants
 const BTN_WIDTH: i32 = 120;
+const BTN_HEIGHT: i32 = 62;
+const CHECKBOX_HEIGHT: i32 = 25;
 const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 6 + 12;
-const WINDOW_HEIGHT: i32 = 100;
+const WINDOW_HEIGHT: i32 = 135;
+
+// Timer ID for mouse jiggle
+const TIMER_JIGGLE: usize = 1;
+const JIGGLE_INTERVAL_MS: u32 = 30_000; // 30 seconds
 
 // ---------------------------------------------------------------------------
 // Main window struct
@@ -52,6 +58,8 @@ pub struct MainWindow {
     btn_start: HWNDWrapper,
     #[allow(dead_code)]
     btn_quit: HWNDWrapper,
+    jiggle_checkbox: HWNDWrapper,
+    jiggle_toggle: AtomicBool,
 }
 
 impl MainWindow {
@@ -180,8 +188,41 @@ impl MainWindow {
                     hinstance,
                 ));
 
-                let layout = Layout {
+                let jiggle_checkbox = HWNDWrapper(controls::create_checkbox(
+                    "Jiggle mouse",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_JIGGLE_MOUSE as isize as _),
+                    hinstance,
+                ));
+                // Add tooltip for the jiggle checkbox
+                if !tooltip_hwnd.is_null() {
+                    let mut tool_info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+                    tool_info.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
+                    tool_info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+                    tool_info.hwnd = hwnd;
+                    tool_info.uId = jiggle_checkbox.0 as usize;
+                    tool_info.hinst = hinstance;
+                    tool_info.lpszText = w!(
+                        "When checked, periodically moves the mouse by 1 pixel to prevent the monitor from going to sleep."
+                    ) as *mut u16;
+                    unsafe {
+                        SendMessageW(
+                            tooltip_hwnd,
+                            TTM_ADDTOOLW,
+                            0,
+                            &mut tool_info as *mut TTTOOLINFOW as LPARAM,
+                        );
+                    }
+                }
+
+                // Horizontal layout for the action buttons
+                let btn_layout = Layout {
                     orientation: Orientation::Horizontal,
+                    margin: 0,
                     items: vec![
                         Item::Fixed {
                             hwnd: btn_kill_explorer.clone(),
@@ -211,6 +252,22 @@ impl MainWindow {
                     ..Default::default()
                 };
 
+                // Outer vertical layout: checkbox on top, buttons below
+                let layout = Layout {
+                    orientation: Orientation::Vertical,
+                    items: vec![
+                        Item::Fixed {
+                            hwnd: jiggle_checkbox.clone(),
+                            size: CHECKBOX_HEIGHT,
+                        },
+                        Item::Nested {
+                            layout: Box::new(btn_layout),
+                            size: BTN_HEIGHT,
+                        },
+                    ],
+                    ..Default::default()
+                };
+
                 let window = Arc::new(Self {
                     base,
                     layout: Mutex::new(layout),
@@ -222,6 +279,8 @@ impl MainWindow {
                     btn_reset,
                     btn_start,
                     btn_quit,
+                    jiggle_checkbox,
+                    jiggle_toggle: AtomicBool::new(false),
                 });
 
                 // Perform initial layout.
@@ -293,6 +352,20 @@ impl Window for MainWindow {
                             SetWindowTextW(self.btn_kill_explorer.0, w!("Kill Explorer"));
                         }
                     }
+                } else if id == constants::ID_JIGGLE_MOUSE {
+                    // Checkbox toggled – start or stop the jiggle timer.
+                    let checked = unsafe {
+                        SendMessageW(self.jiggle_checkbox.0, BM_GETCHECK, 0, 0)
+                    };
+                    if checked == BST_CHECKED as isize {
+                        unsafe {
+                            SetTimer(self.base.hwnd(), TIMER_JIGGLE, JIGGLE_INTERVAL_MS, None);
+                        }
+                    } else {
+                        unsafe {
+                            KillTimer(self.base.hwnd(), TIMER_JIGGLE);
+                        }
+                    }
                 } else {
                     STATE.with(|s| {
                         let mut state = s.borrow_mut();
@@ -322,8 +395,27 @@ impl Window for MainWindow {
                 0
             }
 
+            WM_TIMER => {
+                if wparam as usize == TIMER_JIGGLE {
+                    let mut pt = POINT { x: 0, y: 0 };
+                    unsafe {
+                        GetCursorPos(&mut pt);
+                    }
+                    let offset: i32 = if self.jiggle_toggle.fetch_xor(true, Ordering::Relaxed) {
+                        1
+                    } else {
+                        -1
+                    };
+                    unsafe {
+                        SetCursorPos(pt.x + offset, pt.y);
+                    }
+                }
+                0
+            }
+
             WM_DESTROY => {
                 unsafe {
+                    KillTimer(self.base.hwnd(), TIMER_JIGGLE);
                     if !self.tooltip_hwnd.0.is_null() {
                         DestroyWindow(self.tooltip_hwnd.0);
                     }
