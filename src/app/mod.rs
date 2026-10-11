@@ -170,16 +170,8 @@ impl AppState {
 
     // ---------- Recording ----------
 
-    fn bind_key(&mut self, vk: u32) {
-        let mut pt = POINT { x: 0, y: 0 };
-        unsafe {
-            GetCursorPos(&mut pt);
-        }
-
-        bindings::upsert(&mut self.bindings, vk, pt);
-        self.mode = Mode::Idle;
-
-        // Persist
+    /// Persist bindings and randomize-settings to `Documents/clickassist.json`.
+    pub fn save_config(&self) {
         let cfg = config::Config {
             bindings: self
                 .bindings
@@ -190,8 +182,22 @@ impl AppState {
                     y: pt.y,
                 })
                 .collect(),
+            randomize_touch: self.random_touch_radius,
         };
         let _ = config::save(&cfg);
+    }
+
+    fn bind_key(&mut self, vk: u32) {
+        let mut pt = POINT { x: 0, y: 0 };
+        unsafe {
+            GetCursorPos(&mut pt);
+        }
+
+        bindings::upsert(&mut self.bindings, vk, pt);
+        self.mode = Mode::Idle;
+
+        // Persist
+        self.save_config();
 
         // Preserve the positions overlay while recording. Invalidating it
         // causes a normal WM_PAINT redraw; it must not be toggled or hidden
@@ -212,18 +218,8 @@ impl AppState {
             return;
         }
 
-        let cfg = config::Config {
-            bindings: self
-                .bindings
-                .iter()
-                .map(|(&vk, &pt)| bindings::Binding {
-                    vk,
-                    x: pt.x,
-                    y: pt.y,
-                })
-                .collect(),
-        };
-        let _ = config::save(&cfg);
+        // Persist (includes the randomize_touch radius so it is not lost).
+        self.save_config();
 
         // Keep Show Positions in sync immediately after a dot is removed.
         self.refresh_overlay();
@@ -258,8 +254,8 @@ impl AppState {
         self.bindings.clear();
         self.mode = Mode::Idle;
 
-        // Persist empty config
-        let _ = config::save(&config::Config { bindings: vec![] });
+        // Persist empty binding list (keeps the randomize_touch radius).
+        self.save_config();
 
         // Hide overlay if visible
         if self.overlay_visible {

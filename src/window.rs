@@ -90,7 +90,9 @@ pub struct MainWindow {
 
 impl MainWindow {
     /// Create the main application window (hidden until `ShowWindow`).
-    pub fn create(hinstance: HINSTANCE) -> Arc<Self> {
+    /// `random_radius` is the persisted `randomize_touch` value loaded from
+    /// config, used as the initial text of the radius input.
+    pub fn create(hinstance: HINSTANCE, random_radius: u32) -> Arc<Self> {
         let class = register_classname("ClickAssistMain");
 
         Base::create_window::<Self, _, WinError>(
@@ -241,10 +243,13 @@ impl MainWindow {
                     )
                 });
                 let random_radius_input = HWNDWrapper(unsafe {
+                    // Initialize the input from the persisted config value.
+                    let mut radius_text: Vec<u16> = random_radius.to_string().encode_utf16().collect();
+                    radius_text.push(0);
                     CreateWindowExW(
                         0,
                         w!("EDIT"),
-                        w!("0"),
+                        radius_text.as_ptr(),
                         WS_CHILD
                             | WS_VISIBLE
                             | WS_BORDER
@@ -456,7 +461,12 @@ impl Window for MainWindow {
                         } else {
                             0
                         };
-                        STATE.with(|s| s.borrow_mut().random_touch_radius = radius);
+                        STATE.with(|s| {
+                            let mut state = s.borrow_mut();
+                            state.random_touch_radius = radius;
+                            // Persist the new radius to the config file.
+                            state.save_config();
+                        });
                     }
                 } else if id == constants::ID_JIGGLE_MOUSE {
                     // Checkbox toggled – start or stop the jiggle timer.

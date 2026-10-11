@@ -13,6 +13,9 @@ use crate::bindings::Binding;
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub bindings: Vec<Binding>,
+    /// Maximum random displacement radius (pixels) for touch input.
+    #[serde(default)]
+    pub randomize_touch: u32,
 }
 
 /// Return the path to the config file: `Documents/clickassist.json`.
