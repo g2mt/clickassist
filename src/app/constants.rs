@@ -6,6 +6,7 @@ pub const ID_QUIT: u16 = 105;
 pub const ID_RESET: u16 = 106;
 pub const ID_KILL_EXPLORER: u16 = 107;
 pub const ID_JIGGLE_MOUSE: u16 = 108;
+pub const ID_RANDOM_TOUCH_RADIUS: u16 = 109;
 
 // Tray context-menu item IDs
 pub const ID_TRAY_SHOW: u16 = 201;

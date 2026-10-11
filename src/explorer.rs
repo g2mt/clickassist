@@ -23,7 +23,10 @@ fn process_ids() -> Vec<u32> {
         if Process32FirstW(snapshot, &mut entry) != 0 {
             loop {
                 let name = String::from_utf16_lossy(&entry.szExeFile);
-                if name.trim_end_matches('\0').eq_ignore_ascii_case("explorer.exe") {
+                if name
+                    .trim_end_matches('\0')
+                    .eq_ignore_ascii_case("explorer.exe")
+                {
                     ids.push(entry.th32ProcessID);
                 }
                 if Process32NextW(snapshot, &mut entry) == 0 {

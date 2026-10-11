@@ -108,12 +108,10 @@ fn run_message_loop() -> i32 {
             0 => {
                 return msg.wParam as i32;
             }
-            _ => {
-                unsafe {
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
-            }
+            _ => unsafe {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            },
         }
     }
 }

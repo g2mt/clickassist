@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+use rand::Rng;
 use windows_sys::Win32::Foundation::{HWND, POINT};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -31,10 +32,18 @@ pub enum Mode {
 // AppState
 // ---------------------------------------------------------------------------
 
+pub struct ActiveTouch {
+    pointer_id: touch::PointerId,
+    /// The randomized position used for the initial touch-down event.
+    pos: POINT,
+}
+
 pub struct AppState {
     pub mode: Mode,
     pub bindings: HashMap<u32, POINT>,
-    pub active: HashMap<u32, touch::PointerId>,
+    pub active: HashMap<u32, ActiveTouch>,
+    /// Maximum distance, in pixels, by which a new touch may be displaced.
+    pub random_touch_radius: u32,
     /// Bound keyboard keys currently held down; used by the overlay highlight.
     pub pressed: HashSet<u32>,
     pub ctrl_down: bool,
@@ -50,6 +59,7 @@ impl Default for AppState {
             mode: Mode::Idle,
             bindings: HashMap::new(),
             active: HashMap::new(),
+            random_touch_radius: 0,
             pressed: HashSet::new(),
             ctrl_down: false,
             gesture_anchor: None,
@@ -296,6 +306,27 @@ impl AppState {
 
     // ---------- Touch injection ----------
 
+    /// Return a uniformly random point within the configured circular radius.
+    fn randomized_touch_position(&self, pos: POINT) -> POINT {
+        if self.random_touch_radius == 0 {
+            return pos;
+        }
+
+        let mut rng = rand::rng();
+        let angle = rng.random_range(0.0..std::f64::consts::TAU);
+        // sqrt produces a uniform distribution over the circle's area rather
+        // than concentrating touches near its centre.
+        let distance = (rng.random::<f64>().sqrt() * self.random_touch_radius as f64).round();
+        POINT {
+            x: pos
+                .x
+                .saturating_add((distance * angle.cos()).round() as i32),
+            y: pos
+                .y
+                .saturating_add((distance * angle.sin()).round() as i32),
+        }
+    }
+
     fn process_bound_key_down(&mut self, vk: u32) {
         eprintln!(
             "key down: {vk}, gesture_anchor: {:?}, ctrl: {}",
@@ -309,22 +340,36 @@ impl AppState {
                     return;
                 }
                 // Gesture move: drag anchor to this key's position
-                if let Some(pid) = self.active.get(&anchor_vk) {
-                    let from = self.bindings[&anchor_vk];
-                    // Inject interpolated move
-                    touch::touch_move(pid, from, pos);
+                if let Some(active) = self.active.get(&anchor_vk) {
+                    // Inject interpolated move from the actual touch-down
+                    // position, which may have been randomized.
+                    touch::touch_move(&active.pointer_id, active.pos, pos);
                 }
             } else {
                 // First key while Ctrl held = gesture anchor
                 self.gesture_anchor = Some(vk);
-                if let Some(pid) = touch::touch_down(pos) {
-                    self.active.insert(vk, pid);
+                let touch_pos = self.randomized_touch_position(pos);
+                if let Some(pointer_id) = touch::touch_down(touch_pos) {
+                    self.active.insert(
+                        vk,
+                        ActiveTouch {
+                            pointer_id,
+                            pos: touch_pos,
+                        },
+                    );
                 }
             }
         } else if !self.active.contains_key(&vk) {
             // Simple touch press
-            if let Some(pid) = touch::touch_down(pos) {
-                self.active.insert(vk, pid);
+            let touch_pos = self.randomized_touch_position(pos);
+            if let Some(pointer_id) = touch::touch_down(touch_pos) {
+                self.active.insert(
+                    vk,
+                    ActiveTouch {
+                        pointer_id,
+                        pos: touch_pos,
+                    },
+                );
             }
         }
     }
@@ -334,9 +379,8 @@ impl AppState {
             "key up: {vk}, gesture_anchor: {:?}, ctrl: {}",
             self.gesture_anchor, self.ctrl_down
         );
-        if let Some(pid) = self.active.remove(&vk) {
-            let pos = self.bindings[&vk];
-            touch::touch_up(pid, pos);
+        if let Some(active) = self.active.remove(&vk) {
+            touch::touch_up(active.pointer_id, active.pos);
         }
     }
 

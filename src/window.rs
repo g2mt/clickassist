@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::UI::Controls::{
-    InitCommonControls, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH,
-    TTTOOLINFOW, TTS_ALWAYSTIP, TTS_NOPREFIX, BST_CHECKED
+    BST_CHECKED, InitCommonControls, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH,
+    TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::core::w;
@@ -29,6 +29,9 @@ pub const WM_TRAY: u32 = WM_APP + 1;
 const BTN_WIDTH: i32 = 120;
 const BTN_HEIGHT: i32 = 62;
 const CHECKBOX_HEIGHT: i32 = 25;
+const JIGGLE_CHECKBOX_WIDTH: i32 = 125;
+const RANDOM_RADIUS_LABEL_WIDTH: i32 = 215;
+const RANDOM_RADIUS_INPUT_WIDTH: i32 = 70;
 const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 6 + 12;
 const WINDOW_HEIGHT: i32 = 135;
 
@@ -80,6 +83,8 @@ pub struct MainWindow {
     #[allow(dead_code)]
     btn_quit: HWNDWrapper,
     jiggle_checkbox: HWNDWrapper,
+    random_radius_label: HWNDWrapper,
+    random_radius_input: HWNDWrapper,
     jiggle_toggle: AtomicBool,
 }
 
@@ -219,6 +224,43 @@ impl MainWindow {
                     Some(constants::ID_JIGGLE_MOUSE as isize as _),
                     hinstance,
                 ));
+                let random_radius_label = HWNDWrapper(unsafe {
+                    CreateWindowExW(
+                        0,
+                        w!("STATIC"),
+                        w!("Randomize touch within radius:"),
+                        WS_CHILD | WS_VISIBLE,
+                        0,
+                        0,
+                        0,
+                        0,
+                        hwnd,
+                        std::ptr::null_mut(),
+                        hinstance,
+                        std::ptr::null(),
+                    )
+                });
+                let random_radius_input = HWNDWrapper(unsafe {
+                    CreateWindowExW(
+                        0,
+                        w!("EDIT"),
+                        w!("0"),
+                        WS_CHILD
+                            | WS_VISIBLE
+                            | WS_BORDER
+                            | ES_AUTOHSCROLL as u32
+                            | ES_NUMBER as u32,
+                        0,
+                        0,
+                        0,
+                        0,
+                        hwnd,
+                        constants::ID_RANDOM_TOUCH_RADIUS as isize as _,
+                        hinstance,
+                        std::ptr::null(),
+                    )
+                });
+
                 // Add tooltip for the jiggle checkbox
                 if !tooltip_hwnd.is_null() {
                     let mut tool_info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
@@ -273,12 +315,32 @@ impl MainWindow {
                     ..Default::default()
                 };
 
-                // Outer vertical layout: checkbox on top, buttons below
-                let layout = Layout {
-                    orientation: Orientation::Vertical,
+                // Outer vertical layout: touch options on top, buttons below.
+                let touch_options_layout = Layout {
+                    orientation: Orientation::Horizontal,
+                    margin: 0,
                     items: vec![
                         Item::Fixed {
                             hwnd: jiggle_checkbox.clone(),
+                            size: JIGGLE_CHECKBOX_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: random_radius_label.clone(),
+                            size: RANDOM_RADIUS_LABEL_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: random_radius_input.clone(),
+                            size: RANDOM_RADIUS_INPUT_WIDTH,
+                        },
+                    ],
+                    ..Default::default()
+                };
+
+                let layout = Layout {
+                    orientation: Orientation::Vertical,
+                    items: vec![
+                        Item::Nested {
+                            layout: Box::new(touch_options_layout),
                             size: CHECKBOX_HEIGHT,
                         },
                         Item::Nested {
@@ -301,6 +363,8 @@ impl MainWindow {
                     btn_start,
                     btn_quit,
                     jiggle_checkbox,
+                    random_radius_label,
+                    random_radius_input,
                     jiggle_toggle: AtomicBool::new(false),
                 });
 
@@ -373,11 +437,31 @@ impl Window for MainWindow {
                             SetWindowTextW(self.btn_kill_explorer.0, w!("Kill Explorer"));
                         }
                     }
+                } else if id == constants::ID_RANDOM_TOUCH_RADIUS {
+                    if ((wparam >> 16) & 0xFFFF) as u16 == EN_CHANGE as u16 {
+                        let mut text = [0u16; 16];
+                        let length = unsafe {
+                            GetWindowTextW(
+                                self.random_radius_input.0,
+                                text.as_mut_ptr(),
+                                text.len() as i32,
+                            )
+                        };
+                        // ES_NUMBER prevents negative values while typing; an
+                        // empty or invalid value is treated as the minimum, 0.
+                        let radius = if length > 0 {
+                            String::from_utf16_lossy(&text[..length as usize])
+                                .parse::<u32>()
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        STATE.with(|s| s.borrow_mut().random_touch_radius = radius);
+                    }
                 } else if id == constants::ID_JIGGLE_MOUSE {
                     // Checkbox toggled – start or stop the jiggle timer.
-                    let checked = unsafe {
-                        SendMessageW(self.jiggle_checkbox.0, BM_GETCHECK, 0, 0)
-                    };
+                    let checked =
+                        unsafe { SendMessageW(self.jiggle_checkbox.0, BM_GETCHECK, 0, 0) };
                     if checked == BST_CHECKED as isize {
                         // Synthetic cursor movement is not reliably counted as
                         // activity, so explicitly prevent display idle timeout.
