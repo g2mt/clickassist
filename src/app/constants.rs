@@ -8,6 +8,7 @@ pub const ID_KILL_EXPLORER: u16 = 107;
 pub const ID_JIGGLE_MOUSE: u16 = 108;
 pub const ID_RANDOM_TOUCH_RADIUS: u16 = 109;
 pub const ID_REPEAT_MS: u16 = 110;
+pub const ID_TOGGLE_MODE: u16 = 111;
 
 pub const TIMER_REPEAT_TOUCH: usize = 2;
 pub const TIMER_JIGGLE: usize = 1;

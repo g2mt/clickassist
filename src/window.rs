@@ -30,6 +30,7 @@ const BTN_WIDTH: i32 = 120;
 const BTN_HEIGHT: i32 = 62;
 const CHECKBOX_HEIGHT: i32 = 25;
 const JIGGLE_CHECKBOX_WIDTH: i32 = 125;
+const TOGGLE_MODE_CHECKBOX_WIDTH: i32 = 120;
 const REPEAT_MS_LABEL_WIDTH: i32 = 65;
 const REPEAT_MS_INPUT_WIDTH: i32 = 70;
 const RANDOM_RADIUS_LABEL_WIDTH: i32 = 215;
@@ -81,6 +82,7 @@ pub struct MainWindow {
     #[allow(dead_code)]
     btn_quit: HWNDWrapper,
     jiggle_checkbox: HWNDWrapper,
+    toggle_mode_checkbox: HWNDWrapper,
     #[allow(dead_code)]
     repeat_ms_label: HWNDWrapper,
     repeat_ms_input: HWNDWrapper,
@@ -92,7 +94,12 @@ pub struct MainWindow {
 impl MainWindow {
     /// Create the main application window (hidden until `ShowWindow`).
     /// The settings are loaded from config and used as initial input values.
-    pub fn create(hinstance: HINSTANCE, random_radius: u32, repeat_ms: u32) -> Arc<Self> {
+    pub fn create(
+        hinstance: HINSTANCE,
+        random_radius: u32,
+        repeat_ms: u32,
+        toggle_mode: bool,
+    ) -> Arc<Self> {
         let class = register_classname("ClickAssistMain");
 
         Base::create_window::<Self, _, WinError>(
@@ -226,6 +233,26 @@ impl MainWindow {
                     Some(constants::ID_JIGGLE_MOUSE as isize as _),
                     hinstance,
                 ));
+                let toggle_mode_checkbox = HWNDWrapper(controls::create_checkbox(
+                    "Toggle Mode",
+                    0,
+                    0,
+                    0,
+                    0,
+                    hwnd,
+                    Some(constants::ID_TOGGLE_MODE as isize as _),
+                    hinstance,
+                ));
+                if toggle_mode {
+                    unsafe {
+                        SendMessageW(
+                            toggle_mode_checkbox.0,
+                            BM_SETCHECK,
+                            BST_CHECKED as usize,
+                            0,
+                        );
+                    }
+                }
                 let repeat_ms_label = HWNDWrapper(unsafe {
                     CreateWindowExW(
                         0,
@@ -368,6 +395,10 @@ impl MainWindow {
                             size: JIGGLE_CHECKBOX_WIDTH,
                         },
                         Item::Fixed {
+                            hwnd: toggle_mode_checkbox.clone(),
+                            size: TOGGLE_MODE_CHECKBOX_WIDTH,
+                        },
+                        Item::Fixed {
                             hwnd: repeat_ms_label.clone(),
                             size: REPEAT_MS_LABEL_WIDTH,
                         },
@@ -414,6 +445,7 @@ impl MainWindow {
                     btn_start,
                     btn_quit,
                     jiggle_checkbox,
+                    toggle_mode_checkbox,
                     repeat_ms_label,
                     repeat_ms_input,
                     random_radius_label,
@@ -535,6 +567,11 @@ impl Window for MainWindow {
                             state.save_config();
                         });
                     }
+                } else if id == constants::ID_TOGGLE_MODE {
+                    let checked = unsafe {
+                        SendMessageW(self.toggle_mode_checkbox.0, BM_GETCHECK, 0, 0)
+                    } == BST_CHECKED as isize;
+                    STATE.with(|s| s.borrow_mut().set_toggle_mode(checked));
                 } else if id == constants::ID_JIGGLE_MOUSE {
                     // Checkbox toggled – start or stop the jiggle timer.
                     let checked =

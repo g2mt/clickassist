@@ -53,7 +53,12 @@ fn main() {
     touch::init_touch_injection(10);
 
     // ---------- Create windows ----------
-    let main_window = window::MainWindow::create(hinstance, cfg.randomize_touch, cfg.repeat_ms);
+    let main_window = window::MainWindow::create(
+        hinstance,
+        cfg.randomize_touch,
+        cfg.repeat_ms,
+        cfg.toggle_mode,
+    );
     let main_hwnd = main_window.base().hwnd();
     let overlay_hwnd = overlay::create_overlay_window(hinstance);
 
@@ -63,6 +68,7 @@ fn main() {
         s.bindings = bindings;
         s.random_touch_radius = cfg.randomize_touch;
         s.repeat_ms = cfg.repeat_ms;
+        s.toggle_mode = cfg.toggle_mode;
         s.main_hwnd = main_hwnd;
         s.overlay_hwnd = overlay_hwnd;
     });

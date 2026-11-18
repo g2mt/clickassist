@@ -47,7 +47,11 @@ pub struct AppState {
     pub random_touch_radius: u32,
     /// Interval in milliseconds for repeating a held key's touch; 0 disables it.
     pub repeat_ms: u32,
-    /// Bound keyboard keys currently held down; used by the overlay highlight.
+    /// Toggle bindings on/off with each press instead of holding them.
+    pub toggle_mode: bool,
+    /// Keys currently held by the physical keyboard and how each press behaves.
+    binding_key_downs: HashMap<u32, bool>,
+    /// Active bindings, also used by the overlay highlight.
     pub pressed: HashSet<u32>,
     pub ctrl_down: bool,
     pub gesture_anchor: Option<u32>,
@@ -64,6 +68,8 @@ impl Default for AppState {
             active: HashMap::new(),
             random_touch_radius: 0,
             repeat_ms: 0,
+            toggle_mode: false,
+            binding_key_downs: HashMap::new(),
             pressed: HashSet::new(),
             ctrl_down: false,
             gesture_anchor: None,
@@ -137,6 +143,23 @@ impl AppState {
             _ => {}
         }
 
+        if !down {
+            if let Some(was_toggle_mode) = self.binding_key_downs.remove(&vk) {
+                if !was_toggle_mode {
+                    let was_pressed = self.pressed.remove(&vk);
+                    self.release_touch(vk);
+                    if was_pressed && self.pressed.is_empty() {
+                        self.update_repeat_timer();
+                    }
+                    self.refresh_overlay();
+                }
+                return true;
+            }
+        } else if self.binding_key_downs.contains_key(&vk) {
+            // Swallow OS key-repeat until the matching physical key-up.
+            return true;
+        }
+
         match self.mode {
             Mode::Idle => false, // pass through
 
@@ -156,24 +179,32 @@ impl AppState {
 
             Mode::Started => {
                 if !down {
-                    // Key up: release touch and remove its visual highlight.
+                    // Fallback for a key-down that was not tracked above.
                     let was_pressed = self.pressed.remove(&vk);
                     self.release_touch(vk);
                     if was_pressed && self.pressed.is_empty() {
                         self.update_repeat_timer();
                     }
                     self.refresh_overlay();
-                    // Swallow the matching release for an injected touch.
                     was_pressed
                 } else if self.is_modifier(vk) {
                     false // pass through modifiers
                 } else if self.bindings.contains_key(&vk) {
-                    let was_empty = self.pressed.is_empty();
-                    self.pressed.insert(vk);
-                    if was_empty {
-                        self.update_repeat_timer();
+                    self.binding_key_downs.insert(vk, self.toggle_mode);
+
+                    if self.toggle_mode && self.pressed.remove(&vk) {
+                        self.release_touch(vk);
+                        if self.pressed.is_empty() {
+                            self.update_repeat_timer();
+                        }
+                    } else {
+                        let was_empty = self.pressed.is_empty();
+                        self.pressed.insert(vk);
+                        if was_empty {
+                            self.update_repeat_timer();
+                        }
+                        self.process_bound_key_down(vk);
                     }
-                    self.process_bound_key_down(vk);
                     self.refresh_overlay();
                     true // swallow
                 } else {
@@ -207,6 +238,7 @@ impl AppState {
                 .collect(),
             randomize_touch: self.random_touch_radius,
             repeat_ms: self.repeat_ms,
+            toggle_mode: self.toggle_mode,
         };
         let _ = config::save(&cfg);
     }
@@ -216,6 +248,11 @@ impl AppState {
         self.repeat_ms = repeat_ms;
         self.save_config();
         self.update_repeat_timer();
+    }
+
+    pub fn set_toggle_mode(&mut self, toggle_mode: bool) {
+        self.toggle_mode = toggle_mode;
+        self.save_config();
     }
 
     fn set_mode(&mut self, mode: Mode) {

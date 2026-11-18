@@ -19,6 +19,9 @@ pub struct Config {
     /// Interval in milliseconds for repeating a held key's touch (0 disables it).
     #[serde(default)]
     pub repeat_ms: u32,
+    /// Toggle a binding on/off with each press instead of holding it.
+    #[serde(default)]
+    pub toggle_mode: bool,
 }
 
 /// Return the path to the config file: `Documents/clickassist.json`.
