@@ -230,7 +230,7 @@ impl MainWindow {
                     CreateWindowExW(
                         0,
                         w!("STATIC"),
-                        w!("Randomize touch within radius:"),
+                        w!("Randomize touch within:"),
                         WS_CHILD | WS_VISIBLE,
                         0,
                         0,
