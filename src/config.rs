@@ -16,6 +16,9 @@ pub struct Config {
     /// Maximum random displacement radius (pixels) for touch input.
     #[serde(default)]
     pub randomize_touch: u32,
+    /// Interval in milliseconds for repeating a held key's touch (0 disables it).
+    #[serde(default)]
+    pub repeat_ms: u32,
 }
 
 /// Return the path to the config file: `Documents/clickassist.json`.

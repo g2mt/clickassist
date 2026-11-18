@@ -45,6 +45,8 @@ pub struct AppState {
     pub active: HashMap<u32, ActiveTouch>,
     /// Maximum distance, in pixels, by which a new touch may be displaced.
     pub random_touch_radius: u32,
+    /// Interval in milliseconds for repeating a held key's touch; 0 disables it.
+    pub repeat_ms: u32,
     /// Bound keyboard keys currently held down; used by the overlay highlight.
     pub pressed: HashSet<u32>,
     pub ctrl_down: bool,
@@ -61,6 +63,7 @@ impl Default for AppState {
             bindings: HashMap::new(),
             active: HashMap::new(),
             random_touch_radius: 0,
+            repeat_ms: 0,
             pressed: HashSet::new(),
             ctrl_down: false,
             gesture_anchor: None,
@@ -156,13 +159,20 @@ impl AppState {
                     // Key up: release touch and remove its visual highlight.
                     let was_pressed = self.pressed.remove(&vk);
                     self.release_touch(vk);
+                    if was_pressed && self.pressed.is_empty() {
+                        self.update_repeat_timer();
+                    }
                     self.refresh_overlay();
                     // Swallow the matching release for an injected touch.
                     was_pressed
                 } else if self.is_modifier(vk) {
                     false // pass through modifiers
                 } else if self.bindings.contains_key(&vk) {
+                    let was_empty = self.pressed.is_empty();
                     self.pressed.insert(vk);
+                    if was_empty {
+                        self.update_repeat_timer();
+                    }
                     self.process_bound_key_down(vk);
                     self.refresh_overlay();
                     true // swallow
@@ -183,7 +193,7 @@ impl AppState {
 
     // ---------- Recording ----------
 
-    /// Persist bindings and randomize-settings to `Documents/clickassist.json`.
+    /// Persist bindings and touch settings to `Documents/clickassist.json`.
     pub fn save_config(&self) {
         let cfg = config::Config {
             bindings: self
@@ -196,8 +206,36 @@ impl AppState {
                 })
                 .collect(),
             randomize_touch: self.random_touch_radius,
+            repeat_ms: self.repeat_ms,
         };
         let _ = config::save(&cfg);
+    }
+
+    /// Set and persist the held-key touch-repeat interval.
+    pub fn set_repeat_ms(&mut self, repeat_ms: u32) {
+        self.repeat_ms = repeat_ms;
+        self.save_config();
+        self.update_repeat_timer();
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.mode = mode;
+        self.update_repeat_timer();
+    }
+
+    fn update_repeat_timer(&self) {
+        unsafe {
+            if self.mode == Mode::Started && !self.pressed.is_empty() && self.repeat_ms > 0 {
+                SetTimer(
+                    self.main_hwnd,
+                    constants::TIMER_REPEAT_TOUCH,
+                    self.repeat_ms,
+                    None,
+                );
+            } else {
+                KillTimer(self.main_hwnd, constants::TIMER_REPEAT_TOUCH);
+            }
+        }
     }
 
     fn bind_key(&mut self, vk: u32) {
@@ -207,7 +245,7 @@ impl AppState {
         }
 
         bindings::upsert(&mut self.bindings, vk, pt);
-        self.mode = Mode::Idle;
+        self.set_mode(Mode::Idle);
 
         // Persist
         self.save_config();
@@ -265,7 +303,7 @@ impl AppState {
         self.pressed.clear();
         self.gesture_anchor = None;
         self.bindings.clear();
-        self.mode = Mode::Idle;
+        self.set_mode(Mode::Idle);
 
         // Persist empty binding list (keeps the randomize_touch radius).
         self.save_config();
@@ -280,7 +318,7 @@ impl AppState {
     // ---------- Recording entry ----------
 
     pub fn enter_recording(&mut self) {
-        self.mode = Mode::Recording;
+        self.set_mode(Mode::Recording);
         tooltip::show_instruction_tooltip(
             self.main_hwnd,
             "Move cursor and press any key to bind it to that position. Press Esc to cancel.",
@@ -294,7 +332,7 @@ impl AppState {
             // Nothing to do
             return;
         }
-        self.mode = Mode::Started;
+        self.set_mode(Mode::Started);
     }
 
     // ---------- Stop ----------
@@ -307,7 +345,7 @@ impl AppState {
         self.active.clear();
         self.pressed.clear();
         self.gesture_anchor = None;
-        self.mode = Mode::Idle;
+        self.set_mode(Mode::Idle);
         unsafe {
             ShowWindow(self.main_hwnd, SW_RESTORE);
         }
@@ -371,6 +409,40 @@ impl AppState {
         } else if !self.active.contains_key(&vk) {
             // Simple touch press
             let touch_pos = self.randomized_touch_position(pos);
+            if let Some(pointer_id) = touch::touch_down(touch_pos) {
+                self.active.insert(
+                    vk,
+                    ActiveTouch {
+                        pointer_id,
+                        pos: touch_pos,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Re-tap all held bindings when repeating is enabled.
+    pub fn repeat_held_touches(&mut self) {
+        if self.repeat_ms == 0
+            || self.ctrl_down
+            || self.mode != Mode::Started
+            || self.pressed.is_empty()
+        {
+            return;
+        }
+
+        let held_bindings: Vec<u32> = self
+            .pressed
+            .iter()
+            .copied()
+            .filter(|vk| self.bindings.contains_key(vk))
+            .collect();
+
+        for vk in held_bindings {
+            if let Some(active) = self.active.remove(&vk) {
+                touch::touch_up(active.pointer_id, active.pos);
+            }
+            let touch_pos = self.randomized_touch_position(self.bindings[&vk]);
             if let Some(pointer_id) = touch::touch_down(touch_pos) {
                 self.active.insert(
                     vk,

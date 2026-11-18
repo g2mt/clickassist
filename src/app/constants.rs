@@ -7,6 +7,11 @@ pub const ID_RESET: u16 = 106;
 pub const ID_KILL_EXPLORER: u16 = 107;
 pub const ID_JIGGLE_MOUSE: u16 = 108;
 pub const ID_RANDOM_TOUCH_RADIUS: u16 = 109;
+pub const ID_REPEAT_MS: u16 = 110;
+
+pub const TIMER_REPEAT_TOUCH: usize = 2;
+pub const TIMER_JIGGLE: usize = 1;
+pub const JIGGLE_INTERVAL_MS: u32 = 30_000;
 
 // Tray context-menu item IDs
 pub const ID_TRAY_SHOW: u16 = 201;

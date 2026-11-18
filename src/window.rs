@@ -30,14 +30,12 @@ const BTN_WIDTH: i32 = 120;
 const BTN_HEIGHT: i32 = 62;
 const CHECKBOX_HEIGHT: i32 = 25;
 const JIGGLE_CHECKBOX_WIDTH: i32 = 125;
+const REPEAT_MS_LABEL_WIDTH: i32 = 65;
+const REPEAT_MS_INPUT_WIDTH: i32 = 70;
 const RANDOM_RADIUS_LABEL_WIDTH: i32 = 215;
 const RANDOM_RADIUS_INPUT_WIDTH: i32 = 70;
 const WINDOW_WIDTH: i32 = (BTN_WIDTH + 12) * 6 + 12;
 const WINDOW_HEIGHT: i32 = 135;
-
-// Timer ID for mouse jiggle
-const TIMER_JIGGLE: usize = 1;
-const JIGGLE_INTERVAL_MS: u32 = 30_000; // 30 seconds
 
 // `SetCursorPos` alone is not considered user input by all Windows power
 // policies. Keep an explicit display-power request active while jiggling.
@@ -83,6 +81,9 @@ pub struct MainWindow {
     #[allow(dead_code)]
     btn_quit: HWNDWrapper,
     jiggle_checkbox: HWNDWrapper,
+    #[allow(dead_code)]
+    repeat_ms_label: HWNDWrapper,
+    repeat_ms_input: HWNDWrapper,
     random_radius_label: HWNDWrapper,
     random_radius_input: HWNDWrapper,
     jiggle_toggle: AtomicBool,
@@ -90,9 +91,8 @@ pub struct MainWindow {
 
 impl MainWindow {
     /// Create the main application window (hidden until `ShowWindow`).
-    /// `random_radius` is the persisted `randomize_touch` value loaded from
-    /// config, used as the initial text of the radius input.
-    pub fn create(hinstance: HINSTANCE, random_radius: u32) -> Arc<Self> {
+    /// The settings are loaded from config and used as initial input values.
+    pub fn create(hinstance: HINSTANCE, random_radius: u32, repeat_ms: u32) -> Arc<Self> {
         let class = register_classname("ClickAssistMain");
 
         Base::create_window::<Self, _, WinError>(
@@ -226,6 +226,44 @@ impl MainWindow {
                     Some(constants::ID_JIGGLE_MOUSE as isize as _),
                     hinstance,
                 ));
+                let repeat_ms_label = HWNDWrapper(unsafe {
+                    CreateWindowExW(
+                        0,
+                        w!("STATIC"),
+                        w!("Repeat ms:"),
+                        WS_CHILD | WS_VISIBLE,
+                        0,
+                        0,
+                        0,
+                        0,
+                        hwnd,
+                        std::ptr::null_mut(),
+                        hinstance,
+                        std::ptr::null(),
+                    )
+                });
+                let repeat_ms_input = HWNDWrapper(unsafe {
+                    let mut repeat_text: Vec<u16> = repeat_ms.to_string().encode_utf16().collect();
+                    repeat_text.push(0);
+                    CreateWindowExW(
+                        0,
+                        w!("EDIT"),
+                        repeat_text.as_ptr(),
+                        WS_CHILD
+                            | WS_VISIBLE
+                            | WS_BORDER
+                            | ES_AUTOHSCROLL as u32
+                            | ES_NUMBER as u32,
+                        0,
+                        0,
+                        0,
+                        0,
+                        hwnd,
+                        constants::ID_REPEAT_MS as isize as _,
+                        hinstance,
+                        std::ptr::null(),
+                    )
+                });
                 let random_radius_label = HWNDWrapper(unsafe {
                     CreateWindowExW(
                         0,
@@ -330,6 +368,14 @@ impl MainWindow {
                             size: JIGGLE_CHECKBOX_WIDTH,
                         },
                         Item::Fixed {
+                            hwnd: repeat_ms_label.clone(),
+                            size: REPEAT_MS_LABEL_WIDTH,
+                        },
+                        Item::Fixed {
+                            hwnd: repeat_ms_input.clone(),
+                            size: REPEAT_MS_INPUT_WIDTH,
+                        },
+                        Item::Fixed {
                             hwnd: random_radius_label.clone(),
                             size: RANDOM_RADIUS_LABEL_WIDTH,
                         },
@@ -368,6 +414,8 @@ impl MainWindow {
                     btn_start,
                     btn_quit,
                     jiggle_checkbox,
+                    repeat_ms_label,
+                    repeat_ms_input,
                     random_radius_label,
                     random_radius_input,
                     jiggle_toggle: AtomicBool::new(false),
@@ -442,6 +490,25 @@ impl Window for MainWindow {
                             SetWindowTextW(self.btn_kill_explorer.0, w!("Kill Explorer"));
                         }
                     }
+                } else if id == constants::ID_REPEAT_MS {
+                    if ((wparam >> 16) & 0xFFFF) as u16 == EN_CHANGE as u16 {
+                        let mut text = [0u16; 16];
+                        let length = unsafe {
+                            GetWindowTextW(
+                                self.repeat_ms_input.0,
+                                text.as_mut_ptr(),
+                                text.len() as i32,
+                            )
+                        };
+                        let repeat_ms = if length > 0 {
+                            String::from_utf16_lossy(&text[..length as usize])
+                                .parse::<u32>()
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        STATE.with(|s| s.borrow_mut().set_repeat_ms(repeat_ms));
+                    }
                 } else if id == constants::ID_RANDOM_TOUCH_RADIUS {
                     if ((wparam >> 16) & 0xFFFF) as u16 == EN_CHANGE as u16 {
                         let mut text = [0u16; 16];
@@ -477,12 +544,17 @@ impl Window for MainWindow {
                         // activity, so explicitly prevent display idle timeout.
                         prevent_display_sleep();
                         unsafe {
-                            SetTimer(self.base.hwnd(), TIMER_JIGGLE, JIGGLE_INTERVAL_MS, None);
+                            SetTimer(
+                                self.base.hwnd(),
+                                constants::TIMER_JIGGLE,
+                                constants::JIGGLE_INTERVAL_MS,
+                                None,
+                            );
                         }
                     } else {
                         allow_display_sleep();
                         unsafe {
-                            KillTimer(self.base.hwnd(), TIMER_JIGGLE);
+                            KillTimer(self.base.hwnd(), constants::TIMER_JIGGLE);
                         }
                     }
                 } else {
@@ -515,7 +587,9 @@ impl Window for MainWindow {
             }
 
             WM_TIMER => {
-                if wparam as usize == TIMER_JIGGLE {
+                if wparam as usize == constants::TIMER_REPEAT_TOUCH {
+                    STATE.with(|s| s.borrow_mut().repeat_held_touches());
+                } else if wparam as usize == constants::TIMER_JIGGLE {
                     // Renew the request in case another component cleared the
                     // thread's execution state.
                     prevent_display_sleep();
@@ -538,7 +612,8 @@ impl Window for MainWindow {
             WM_DESTROY => {
                 allow_display_sleep();
                 unsafe {
-                    KillTimer(self.base.hwnd(), TIMER_JIGGLE);
+                    KillTimer(self.base.hwnd(), constants::TIMER_JIGGLE);
+                    KillTimer(self.base.hwnd(), constants::TIMER_REPEAT_TOUCH);
                     if !self.tooltip_hwnd.0.is_null() {
                         DestroyWindow(self.tooltip_hwnd.0);
                     }
