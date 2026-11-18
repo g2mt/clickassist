@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use rand::Rng;
 use windows_sys::Win32::Foundation::{HWND, POINT};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use windows_sys::core::w;
 
 use crate::{bindings, config, overlay, tooltip, touch};
 
@@ -99,7 +100,19 @@ impl AppState {
             constants::ID_QUIT => unsafe {
                 PostQuitMessage(0);
             },
-            constants::ID_RESET => self.reset_bindings(),
+            constants::ID_RESET => {
+                let confirmed = unsafe {
+                    MessageBoxW(
+                        self.main_hwnd,
+                        w!("This will remove all key bindings. Are you sure you want to reset?"),
+                        w!("Confirm Reset"),
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2,
+                    )
+                } == IDYES;
+                if confirmed {
+                    self.reset_bindings();
+                }
+            }
             _ => {}
         }
     }
